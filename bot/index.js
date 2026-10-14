@@ -5,8 +5,8 @@
 //   SHOP_URL        — (ixtiyoriy) do'kon sahifasi manzili
 import admin from 'firebase-admin';
 
-const TOKEN = process.env.BOT_TOKEN;
-const SA = process.env.FIREBASE_SA;
+const TOKEN = ((process.env.BOT_TOKEN || '').match(/\d{6,}:[A-Za-z0-9_-]{30,}/) || [''])[0];
+const SA = (process.env.FIREBASE_SA || '').trim();
 const SHOP_URL = process.env.SHOP_URL || 'https://kamoliddintursunbiyev-web.github.io/eco-kassa/shop.html';
 if (!TOKEN || !SA) { console.error('BOT_TOKEN va FIREBASE_SA o\'rnatilmagan'); process.exit(1); }
 
@@ -119,7 +119,9 @@ db.collection('sales').where('ts', '>=', START).onSnapshot(async snap => {
 }, e => console.error('sales listener', e.message));
 
 async function main() {
-  const me = await tg('getMe'); console.log('Bot:', me.result && me.result.username);
+  const me = await tg('getMe');
+  if (!me.ok) { console.error('BOT_TOKEN noto\'g\'ri: Telegram uni qabul qilmadi. Token formati: ' + TOKEN.replace(/:.*/, ':***') + ' (uzunligi ' + TOKEN.length + ')'); return; }
+  console.log('Bot ishga tushdi: @' + me.result.username);
   const wh = await tg('getWebhookInfo');
   if (wh.result && wh.result.url) { console.error('DIQQAT: botda webhook o\'rnatilgan (' + wh.result.url + '). Boshqa tizimni buzmaslik uchun bot ishga tushmadi.'); return; }
   let offset = 0;
