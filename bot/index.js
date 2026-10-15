@@ -4,7 +4,7 @@
 //   FIREBASE_SA     — Firebase service account JSON (butun matn)
 //   SHOP_URL        — (ixtiyoriy) do'kon sahifasi manzili
 import admin from 'firebase-admin';
-import { createHash } from 'node:crypto';
+import { createHash, pbkdf2Sync } from 'node:crypto';
 
 const TOKEN = ((process.env.BOT_TOKEN || '').match(/\d{6,}:[A-Za-z0-9_-]{30,}/) || [''])[0];
 const SA = (process.env.FIREBASE_SA || '').trim();
@@ -38,6 +38,7 @@ async function clientOf(u) { if (!u || !u.clientId) return null; const c = await
 
 // ---------- Rahbar (do'kon egasi) ----------
 const sha = t => createHash('sha256').update('eco-aroma:' + t).digest('hex');
+const checkCred = (x, pw) => { if (!x) return false; if (x.hash && x.salt) return pbkdf2Sync(pw, Buffer.from(x.salt, 'hex'), x.iter || 100000, 32, 'sha256').toString('hex') === x.hash; if (x.pinHash) return sha(pw) === x.pinHash; return false; };
 async function admins() { const d = await db.doc('meta/botAdmins').get(); return d.exists ? (d.data().ids || []) : []; }
 async function isAdmin(id) { return (await admins()).includes(id); }
 const tries = new Map();
@@ -75,22 +76,27 @@ async function onMessage(m) {
 
   if (text === '/rahbar') {
     if (await isAdmin(from.id)) return send(chat, 'Siz allaqachon rahbar sifatida ulangansiz ✅', adminKb);
-    await db.doc(`tgUsers/${from.id}`).set({ adminStep: true }, { merge: true });
-    return send(chat, "🔐 Do'kon egasining kassadagi <b>PIN kodini</b> yuboring.\n(Xabaringiz darhol o'chiriladi.)");
+    await db.doc(`tgUsers/${from.id}`).set({ adminStep: 'login' }, { merge: true });
+    return send(chat, "🔐 Kassadagi <b>rahbar loginini</b> yozing:");
   }
-  if (u && u.adminStep && /^\d{4,6}$/.test(text)) {
+  if (u && u.adminStep === 'login' && text && !text.startsWith('/')) {
+    await db.doc(`tgUsers/${from.id}`).set({ adminStep: 'pw', adminLogin: text.trim().toLowerCase() }, { merge: true });
+    return send(chat, "Endi <b>parolni</b> yozing.\n(Xabaringiz darhol o'chiriladi.)");
+  }
+  if (u && u.adminStep === 'pw' && text) {
     tg('deleteMessage', { chat_id: chat, message_id: m.message_id });
     const t = tries.get(from.id) || { n: 0, ts: Date.now() }; if (Date.now() - t.ts > 3600e3) { t.n = 0; t.ts = Date.now(); }
+    await db.doc(`tgUsers/${from.id}`).set({ adminStep: null }, { merge: true });
     if (t.n >= 5) return send(chat, "Juda ko'p urinish. 1 soatdan keyin qayta urinib ko'ring.");
-    const st = await settings(); const owner = (st.staff || []).find(x => x.role === 'owner');
-    await db.doc(`tgUsers/${from.id}`).set({ adminStep: false }, { merge: true });
-    if (owner && owner.pinHash === sha(text)) {
+    const st = await settings();
+    const owner = (st.staff || []).find(x => x.role === 'owner' && !x.off && String(x.login || x.name || '').toLowerCase() === u.adminLogin);
+    if (owner && checkCred(owner, text)) {
       const ids = await admins(); if (!ids.includes(from.id)) ids.push(from.id);
       await db.doc('meta/botAdmins').set({ ids }, { merge: true });
       return send(chat, "✅ Rahbar sifatida ulandingiz!\n\nEndi sizga yuboriladi:\n• har bir yangi Telegram buyurtma\n• har kuni 21:30 da kunlik hisobot\n\n«📊 Bugungi hisobot» tugmasi bilan istalgan payt ko'rasiz.", adminKb);
     }
     t.n++; tries.set(from.id, t);
-    return send(chat, "❌ PIN noto'g'ri. Qayta urinish uchun /rahbar yuboring.");
+    return send(chat, "❌ Login yoki parol noto'g'ri. Qayta urinish uchun /rahbar yuboring.");
   }
   if (text === B.report || text === '/hisobot') {
     if (await isAdmin(from.id)) return send(chat, await dailyReport('Bugungi hisobot (hozirgacha)'), adminKb);
