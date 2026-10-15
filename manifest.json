@@ -1,1 +1,19 @@
-{"name":"Eco Aroma Kassa","short_name":"Eco Kassa","start_url":"./","scope":"./","display":"standalone","background_color":"#16211a","theme_color":"#16211a","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"}]}
+{
+  "id": "/eco-kassa/",
+  "name": "Eco Aroma Kassa",
+  "short_name": "Eco Kassa",
+  "description": "Eco Aroma do'koni: kassa, ombor, mijozlar, qarzlar, keshbek va rahbar paneli",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#16211a",
+  "theme_color": "#16211a",
+  "lang": "uz",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
