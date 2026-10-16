@@ -1217,7 +1217,7 @@ function xMarketPage(){
  let st=g.settings||{},ps=xPromos(),certs=Object.values(g.certs||{}).sort((a,b)=>b.ts-a.ts),
   live=certs.filter(c=>E(c.balance)>0),days=g._lostD||60,L=xLost(days),bd=xBdays(7),
   tgN=Object.values(g.clients||{}).filter(c=>c.tgId).length,bc=Object.values(g.broadcasts||{}).sort((a,b)=>b.ts-a.ts).slice(0,10);
- return`<h1 class="page">Aksiya va mijozlar</h1>
+ return`<h1 class="page">Aksiya va mijozlar</h1>${xImgSettings()}<div style="height:14px"></div>
  <div class="panel"><div class="panel-h"><h2>\u{1F381} Aksiyalar</h2><span class="spacer"></span><button class="btn sm primary" data-x="pnew">+ Yangi aksiya</button></div>
  <div class="tbl-wrap"><table class="t"><thead><tr><th>Nomi</th><th>Shartlari</th><th>Holati</th><th></th></tr></thead><tbody>
  ${ps.map((p,i)=>`<tr><td><b>${V(p.name)}</b></td><td style="font-size:13px">${V(xPromoDesc(p))}</td><td>${xPromoActive(p)?'<span class="pill ok">Hozir ishlayapti</span>':p.on?'<span class="pill">Kutilmoqda</span>':'<span class="pill out">O\'chiq</span>'}</td><td class="r" style="white-space:nowrap"><button class="btn sm" data-ptog="${i}">${p.on?"O'chirish":"Yoqish"}</button> <button class="btn sm" data-pedit="${i}">Tahrirlash</button></td></tr>`).join("")||'<tr><td colspan="4" class="muted">Hali aksiya yo\'q. Masalan: \xAB2 ta shampun olsa, 3-si sovg\'a\xBB yoki \xABJuma kuni hamma kremlarga 10%\xBB.</td></tr>'}
@@ -1379,6 +1379,171 @@ document.addEventListener("keydown",n=>{
 },!0);
 
 /* ===== /Marketing va tahlil ===== */
+/* ===== Rasm va AI ===== */
+/* ---------- Rasm: fonni tozalash va AI bilan rasm ---------- */
+var xAiBase="./ai/",xSegP=null;
+var xAiPresets={
+ oq:["⬜ Oq studiya","Professional e-commerce product photo of this exact product on a pure white seamless background, soft even studio lighting, subtle natural shadow under the product, product centered and fully visible, square 1:1 composition."],
+ marmar:["\u{1FAA8} Marmar stol","Premium cosmetics product photo of this exact product standing on a light marble surface, soft natural window light, minimal luxury style, softly blurred neutral background, square 1:1 composition."],
+ tabiat:["\u{1F33F} Tabiat","Fresh natural cosmetics product photo of this exact product surrounded by green leaves and a few delicate flowers, bright daylight, clean airy aesthetic, square 1:1 composition."],
+ hammom:["\u{1F6C1} Spa / hammom","Product photo of this exact product in a bright modern bathroom spa setting, soft towels and candles gently blurred in the background, calm warm light, square 1:1 composition."],
+ sovga:["\u{1F381} Sovg'a","Festive gift-style product photo of this exact product with elegant gift box, ribbon and soft bokeh lights, warm cozy mood, square 1:1 composition."]
+};
+var xAiKeep=" Keep the product itself exactly as in the reference photo: same shape, colors, packaging, label and text. Do not add any new text, logos or watermarks.";
+function xLoadScript(src){return new Promise((ok,no)=>{let s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=()=>no(new Error("load"));document.head.appendChild(s)})}
+function xSeg(){
+ if(xSegP)return xSegP;
+ xSegP=(async()=>{window.ort||await xLoadScript(xAiBase+"ort.wasm.min.js");ort.env.wasm.numThreads=1;ort.env.wasm.wasmPaths=new URL(xAiBase,location.href).href;return ort.InferenceSession.create(new URL(xAiBase+"u2netp.onnx",location.href).href,{executionProviders:["wasm"]})})();
+ xSegP.catch(()=>{xSegP=null});return xSegP
+}
+function xCv(w,h){let c=document.createElement("canvas");c.width=w;c.height=h;return c}
+function xImgEl(src){return new Promise((ok,no)=>{let i=new Image;i.onload=()=>ok(i);i.onerror=()=>no(new Error("img"));i.src=src})}
+function xFileData(file,max){return new Promise((ok,no)=>{let u=URL.createObjectURL(file);xImgEl(u).then(i=>{let k=Math.min(1,(max||1280)/Math.max(i.naturalWidth,i.naturalHeight)),c=xCv(Math.round(i.naturalWidth*k),Math.round(i.naturalHeight*k));c.getContext("2d").drawImage(i,0,0,c.width,c.height);URL.revokeObjectURL(u);ok(c.toDataURL("image/jpeg",.92))}).catch(e=>{URL.revokeObjectURL(u);no(e)})})}
+async function xCleanCanvas(src,o){
+ o=o||{};let img=await xImgEl(src),W=img.naturalWidth,H=img.naturalHeight,k=Math.min(1,1024/Math.max(W,H));W=Math.round(W*k);H=Math.round(H*k);
+ let base=xCv(W,H);base.getContext("2d").drawImage(img,0,0,W,H);
+ let S=320,N=S*S,inp=xCv(S,S),ix=inp.getContext("2d");ix.drawImage(base,0,0,S,S);
+ let px=ix.getImageData(0,0,S,S).data,mx=1;for(let i=0;i<N;i++)for(let c=0;c<3;c++)px[i*4+c]>mx&&(mx=px[i*4+c]);
+ let f=new Float32Array(3*N),mean=[.485,.456,.406],sd=[.229,.224,.225];
+ for(let i=0;i<N;i++)for(let c=0;c<3;c++)f[c*N+i]=(px[i*4+c]/mx-mean[c])/sd[c];
+ let s=await xSeg(),r=await s.run({[s.inputNames[0]]:new ort.Tensor("float32",f,[1,3,S,S])}),out=r[s.outputNames[0]].data,lo=Infinity,hi=-Infinity;
+ for(let i=0;i<N;i++){out[i]<lo&&(lo=out[i]);out[i]>hi&&(hi=out[i])}
+ let m=xCv(S,S),mc=m.getContext("2d"),md=mc.createImageData(S,S);
+ for(let i=0;i<N;i++){let a=(out[i]-lo)/(hi-lo||1);a=Math.min(1,Math.max(0,(a-.06)/.88));md.data[i*4+3]=Math.round(a*255)}
+ mc.putImageData(md,0,0);
+ let cut=xCv(W,H),cx=cut.getContext("2d");cx.drawImage(base,0,0);cx.globalCompositeOperation="destination-in";cx.drawImage(m,0,0,W,H);
+ let ad=cx.getImageData(0,0,W,H).data,x0=W,y0=H,x1=-1,y1=-1;
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(ad[(y*W+x)*4+3]>40){x<x0&&(x0=x);x>x1&&(x1=x);y<y0&&(y0=y);y>y1&&(y1=y)}
+ if(x1<0)throw new Error("empty");
+ let bw=x1-x0+1,bh=y1-y0+1,Z=o.size||640,pad=Math.round(Z*.08),sc=Math.min((Z-2*pad)/bw,(Z-2*pad)/bh),dw=bw*sc,dh=bh*sc,
+  oc=xCv(Z,Z),ox=oc.getContext("2d");
+ ox.fillStyle=o.bg||"#ffffff";ox.fillRect(0,0,Z,Z);ox.save();
+ o.shadow!==!1&&(ox.shadowColor="rgba(0,0,0,.16)",ox.shadowBlur=Z*.03,ox.shadowOffsetY=Z*.012);
+ ox.filter="brightness(1.04) contrast(1.05) saturate(1.06)";
+ ox.drawImage(cut,x0,y0,bw,bh,(Z-dw)/2,(Z-dh)/2,dw,dh);ox.restore();
+ return oc
+}
+async function xSquare(src,bg){let i=await xImgEl(src),Z=Math.min(1024,Math.max(i.naturalWidth,i.naturalHeight)),c=xCv(Z,Z),x=c.getContext("2d"),k=Math.max(Z/i.naturalWidth,Z/i.naturalHeight);x.fillStyle=bg||"#ffffff";x.fillRect(0,0,Z,Z);x.drawImage(i,(Z-i.naturalWidth*k)/2,(Z-i.naturalHeight*k)/2,i.naturalWidth*k,i.naturalHeight*k);return c}
+async function xCvSmall(c){let b=await new Promise(r=>c.toBlob(r,"image/png"));return rv(b,400)}
+function xImgBg(){return(g.settings||{}).imgBg||"#ffffff"}
+function xImgAuto(){return(g.settings||{}).imgAuto!==!1}
+function xImgMsg(t){let e=q("#mpImgMsg");e&&(e.innerHTML=t||"")}
+function xImgShow(src){let b=q("#mpImgBox");b&&(b.innerHTML=`<img src="${src}" alt="">`)}
+function xImgTools(){return`<button type="button" class="btn sm" data-x="imgclean">✨ Fonni tozalash</button><button type="button" class="btn sm" data-x="imgai">\u{1F3A8} AI bilan rasm</button><span id="mpImgMsg" class="muted" style="font-size:12px"></span>`}
+function xImgSrcNow(){if(g._mpOrig)return g._mpOrig;if(g.mpImg)return g.mpImg;let i=q("#mpImgBox img");return i?i.src:""}
+async function xImgClean(){
+ let src=xImgSrcNow();if(!src){J("Avval rasm tanlang");return}
+ xImgMsg("⏳ Fon tozalanmoqda… (birinchi marta 10–30 soniya)");
+ try{let c=await xCleanCanvas(src,{bg:xImgBg()});g._mpPrev=g.mpImg!==void 0?g.mpImg:(q("#mpImgBox img")||{}).src;g.mpImg=await xCvSmall(c);xImgShow(g.mpImg);xImgMsg('✅ Tayyor. <button type="button" class="btn sm" data-x="imgundo">Asl rasmni qaytarish</button>')}
+ catch(e){console.error(e);xImgMsg("");J(e.message==="empty"?"Rasmda tovar topilmadi":"Fonni tozalab bo'lmadi — internetni tekshiring")}
+}
+function xAiPanel(ctx){
+ let has=ctx==="ad"?!!g._adSrc:!!xImgSrcNow(),key=(g.settings||{}).aiKey;
+ if(!key)return`<div class="note">AI bilan rasm yaratish uchun Google Gemini kaliti kerak. Uni <b>Aksiya va mijozlar → Rasm sozlamalari</b> bo'limida kiritasiz.</div>`;
+ let p=g._aiP||"oq";
+ return`<div style="display:grid;gap:8px">
+ <div class="chips">${Object.entries(xAiPresets).map(([k,v])=>`<button type="button" data-aip="${k}" aria-pressed="${p===k}">${v[0]}</button>`).join("")}</div>
+ ${has?`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aiUseImg" ${g._aiUse!==!1?"checked":""}> Mening rasmimdan foydalanish (tavsiya — tovar o'zgarmaydi)</label>`:'<div class="note">Rasm yo\'q — AI tovar nomidan rasm chizadi. Bunday rasm haqiqiy tovarga o\'xshamasligi mumkin; mijozlarga ko\'rsatishdan oldin tekshiring.</div>'}
+ <input id="aiExtra" class="f" placeholder="Qo'shimcha istak (ixtiyoriy): masalan, pushti rangli fon" value="${V(g._aiExtra||"")}">
+ <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="btn primary" data-x="aigen" data-ctx="${ctx}">\u{1F3A8} Yaratish</button><span class="muted" style="font-size:12px">1 rasm ≈ 500–900 so'm (Google hisobidan)</span></div>
+ <div id="aiOut"></div></div>`
+}
+async function xGemModel(key,fresh){
+ let st=g.settings||{};if(!fresh){if(st.aiModel)return st.aiModel;if(g._gemModel)return g._gemModel}
+ let r=await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key="+encodeURIComponent(key)),j=await r.json().catch(()=>({}));
+ if(!r.ok)throw new Error(j.error&&j.error.message||"HTTP "+r.status);
+ let ms=(j.models||[]).filter(m=>/image/i.test(m.name)&&!/imagen/i.test(m.name)&&(m.supportedGenerationMethods||[]).includes("generateContent")).map(m=>m.name.replace(/^models\//,"")),
+  sc=n=>(/flash/.test(n)?20:0)+(/preview|exp/.test(n)?-10:0)+(/pro/.test(n)?-5:0)+parseFloat((n.match(/(\d+(\.\d+)?)/)||[0,0])[1]);
+ ms.sort((a,b)=>sc(b)-sc(a));if(!ms.length)throw new Error("Bu kalitda rasm yaratadigan model topilmadi");
+ return g._gemModel=ms[0]
+}
+async function xGemGen(prompt,img){
+ let key=(g.settings||{}).aiKey;if(!key)throw new Error("Gemini kaliti kiritilmagan");
+ let model=await xGemModel(key),parts=[{text:prompt}];
+ if(img){let m=img.match(/^data:(.*?);base64,(.*)$/);m&&parts.push({inline_data:{mime_type:m[1],data:m[2]}})}
+ let r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{role:"user",parts}],generationConfig:{responseModalities:["TEXT","IMAGE"]}})}),
+  j=await r.json().catch(()=>({}));
+ if(!r.ok)throw new Error(j.error&&j.error.message||"HTTP "+r.status);
+ let ps=(((j.candidates||[])[0]||{}).content||{}).parts||[],im=ps.find(x=>x.inlineData||x.inline_data);
+ if(!im)throw new Error("AI rasm qaytarmadi"+(ps.map(x=>x.text).filter(Boolean).join(" ")?": "+ps.map(x=>x.text).filter(Boolean).join(" ").slice(0,160):""));
+ let d=im.inlineData||im.inline_data;return`data:${d.mimeType||d.mime_type||"image/png"};base64,${d.data}`
+}
+async function xImgToData(src,max){let i=await xImgEl(src),k=Math.min(1,(max||1024)/Math.max(i.naturalWidth,i.naturalHeight)),c=xCv(Math.round(i.naturalWidth*k),Math.round(i.naturalHeight*k));c.getContext("2d").drawImage(i,0,0,c.width,c.height);return c.toDataURL("image/jpeg",.9)}
+async function xAiGen(btn,ctx){
+ let out=q("#aiOut");if(!out)return;
+ let p=xAiPresets[g._aiP||"oq"],extra=((q("#aiExtra")||{}).value||"").trim(),use=q("#aiUseImg")?q("#aiUseImg").checked:!1,
+  src=use?ctx==="ad"?g._adSrc:xImgSrcNow():"",
+  nm=ctx==="ad"?(g._adName||""):((q("#mpName")||{}).value||"").trim(),cat=ctx==="ad"?"":((q("#mpCat")||{}).value||"").trim(),
+  prompt=src?p[1]+xAiKeep:p[1].replace("this exact product",`a cosmetics product: ${nm||"skin care product"}${cat?" ("+cat+")":""}`)+" No text on the image.";
+ extra&&(prompt+=" Additional wish from the shop owner (may be in Uzbek): "+extra);
+ btn&&(btn.disabled=!0);out.innerHTML='<div class="note">⏳ AI rasm chizmoqda… 10–40 soniya</div>';
+ try{
+  let res=await xGemGen(prompt,src?await xImgToData(src,1024):null);
+  g._aiRes=res;
+  if(ctx==="ad"){out.innerHTML=`<img src="${res}" style="max-width:100%;border-radius:10px;border:1px solid var(--line)"><div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button type="button" class="btn primary" data-x="aidl">⬇ Yuklab olish</button><button type="button" class="btn" data-x="aigen" data-ctx="ad">\u{1F504} Yana bitta</button></div>`}
+  else{let c=await xSquare(res,xImgBg());g._aiSmall=await xCvSmall(c);out.innerHTML=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><img src="${g._aiSmall}" style="width:140px;height:140px;object-fit:cover;border-radius:10px;border:1px solid var(--line)"><div style="display:grid;gap:6px"><button type="button" class="btn primary" data-x="aiuse">✅ Shu rasmni qo'yish</button><button type="button" class="btn" data-x="aigen" data-ctx="prod">\u{1F504} Yana bitta</button></div></div>`}
+ }catch(e){console.error(e);out.innerHTML=`<div class="note" style="color:var(--danger)">Xato: ${V(e.message||e)}</div>`}
+ btn&&(btn.disabled=!1)
+}
+function xAdModal(){
+ let ps=gt().filter(p=>p.img);g._adSrc=g._adSrc||"";
+ lt("AI bilan reklama rasmi",`<div class="note">Instagram yoki Telegram uchun chiroyli tovar rasmi. Tovarni tanlasangiz, uning rasmidan foydalaniladi. Rasmga yozuvni keyin Canva'da qo'shgan ma'qul — AI yozgan matn ko'pincha xato chiqadi.</div>
+ <label class="l" for="adProd" style="margin-top:8px">Tovar<select id="adProd" class="f"><option value="">— tanlanmagan —</option>${ps.map(p=>`<option value="${V(p.id)}" ${g._adPid===p.id?"selected":""}>${V(p.name)}</option>`).join("")}</select></label>
+ <div style="margin-top:10px">${xAiPanel("ad")}</div>`)
+}
+async function xImgBatch(btn){
+ if(!ue())return;let l=gt().filter(p=>p.img&&!p.imgClean),n=0,bad=0;if(!l.length){J("Tozalanadigan rasm yo'q");return}
+ btn&&(btn.disabled=!0);let msg=q("#aiBatchMsg");
+ for(let p of l){
+  msg&&(msg.textContent=`⏳ ${n+bad+1} / ${l.length}: ${p.name}`);
+  try{let c=await xCleanCanvas(p.img,{bg:xImgBg()}),d=await xCvSmall(c);await mt("imgBackup",p.id,{img:p.img,ts:Date.now()});await Ze("products",p.id,{img:d,imgClean:!0});n++}catch(e){console.error(e);bad++}
+ }
+ msg&&(msg.textContent=`✅ ${n} ta rasm tozalandi${bad?`, ${bad} tasini bo'lmadi`:""}. Asl rasmlar zaxirada saqlandi.`);btn&&(btn.disabled=!1)
+}
+function xImgSettings(){
+ let st=g.settings||{},n=gt().filter(p=>p.img&&!p.imgClean).length,bg=xImgBg();
+ return`<div class="panel" style="margin-top:14px"><div class="panel-h"><h2>\u{1F5BC} Rasm sozlamalari</h2><span class="spacer"></span><button class="btn sm primary" data-x="admodal">\u{1F3A8} Reklama rasmi yaratish</button></div><div class="panel-b" style="display:grid;gap:10px">
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="aiAuto" ${xImgAuto()?"checked":""}> Tovar rasmi yuklanganda fonini avtomatik tozalash va o'rtaga joylash</label>
+  <div><div class="l" style="margin-bottom:6px">Rasm foni</div><div class="chips">${[["#ffffff","Oq"],["#f3f4f6","Och kulrang"],["#fbf6ee","Krem"],["#eef6f1","Och yashil"],["#fdeef3","Och pushti"]].map(([c,t])=>`<button type="button" data-aibg="${c}" aria-pressed="${bg===c}"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #ccc;background:${c};vertical-align:-2px"></span> ${t}</button>`).join("")}</div></div>
+  <label class="l" for="aiKey">Google Gemini API kaliti (AI rasm uchun)<span class="inrow"><input id="aiKey" class="f" type="password" autocomplete="off" placeholder="${st.aiKey?"•••• saqlangan":"AIza…"}"><button type="button" class="btn sm" data-x="aikeysave">Saqlash va tekshirish</button></span></label>
+  <div id="aiKeyMsg" class="muted" style="font-size:13px">${st.aiKey?"Kalit saqlangan"+(st.aiModel?" \xB7 model: "+V(st.aiModel):""):'Kalitni <b>aistudio.google.com</b> saytidan olasiz (Get API key). Rasm yaratish pullik: Google\'da to\'lov (billing) yoqilgan bo\'lishi kerak.'}</div>
+  ${n?`<div class="note">${n} ta tovarning rasmi hali tozalanmagan. <button type="button" class="btn sm" data-x="aibatch">✨ Hammasini tozalash</button> <span id="aiBatchMsg"></span></div>`:""}
+ </div></div>`
+}
+/* hodisalar */
+document.addEventListener("change",async n=>{
+ let t=n.target;if(!t)return;
+ if(t.id==="mpImg"&&t.files&&t.files[0]){
+  n.stopImmediatePropagation();let f=t.files[0];t.value="";
+  try{g._mpOrig=await xFileData(f,1280);g.mpImg=await rv(f,400);xImgShow(g.mpImg);J(`Rasm tayyor (${Math.round(g.mpImg.length/1365)} KB)`);xImgAuto()&&xImgClean()}catch(e){console.error(e);J("Rasmni o'qib bo'lmadi")}
+  return
+ }
+ if(t.id==="adProd"){g._adPid=t.value;let p=g.products[t.value];g._adSrc=p&&p.img||"";g._adName=p?p.name:"";xAdModal();return}
+ if(t.id==="aiAuto"&&ue()){Ze("meta","settings",{imgAuto:t.checked});g.settings.imgAuto=t.checked;J("Saqlandi");return}
+},!0);
+document.addEventListener("click",async n=>{
+ n.target.closest('[data-act="mpimgdel"]')&&(g._mpOrig=null);
+ let t=n.target.closest("[data-x],[data-aip],[data-aibg]");if(!t)return;let d=t.dataset;
+ if(d.aip){g._aiP=d.aip;t.parentElement.querySelectorAll("[data-aip]").forEach(b=>b.setAttribute("aria-pressed",String(b===t)));return}
+ if(d.aibg){if(!ue())return;Ze("meta","settings",{imgBg:d.aibg});g.settings.imgBg=d.aibg;se();return}
+ let a=d.x;
+ if(a==="imgclean")xImgClean();
+ else if(a==="imgundo"){g.mpImg=g._mpPrev;g.mpImg?xImgShow(g.mpImg):xImgShow("");xImgMsg("Asl rasm qaytarildi")}
+ else if(a==="imgai"){let box=q("#mpAi");if(!box)return;box.hidden=!box.hidden;box.hidden||(box.innerHTML=xAiPanel("prod"))}
+ else if(a==="aigen"){g._aiExtra=((q("#aiExtra")||{}).value||"");q("#aiUseImg")&&(g._aiUse=q("#aiUseImg").checked);xAiGen(t,d.ctx||"prod")}
+ else if(a==="aiuse"){g.mpImg=g._aiSmall;xImgShow(g.mpImg);let b=q("#mpAi");b&&(b.innerHTML="",b.hidden=!0);xImgMsg("✅ AI rasm qo'yildi — \xABSaqlash\xBB ni bosing")}
+ else if(a==="aidl"&&g._aiRes){let l=document.createElement("a");l.href=g._aiRes;l.download=`eco-aroma-reklama-${Date.now()}.png`;document.body.appendChild(l);l.click();l.remove()}
+ else if(a==="admodal")xAdModal();
+ else if(a==="aibatch")xImgBatch(t);
+ else if(a==="aikeysave"){
+  let v=((q("#aiKey")||{}).value||"").trim(),m=q("#aiKeyMsg");if(!v&&!(g.settings||{}).aiKey){J("Kalitni kiriting");return}
+  let key=v||g.settings.aiKey;m&&(m.textContent="⏳ Tekshirilmoqda…");
+  try{g._gemModel=null;let mdl=await xGemModel(key,!0);await Ze("meta","settings",{aiKey:key,aiModel:mdl});g.settings.aiKey=key;g.settings.aiModel=mdl;m&&(m.innerHTML=`✅ Kalit ishlayapti \xB7 model: <b>${V(mdl)}</b>`)}
+  catch(e){m&&(m.innerHTML=`<span style="color:var(--danger)">Kalit ishlamadi: ${V(e.message)}</span>`)}
+ }
+},!0);
+
+/* ===== /Rasm va AI ===== */
 function NT(){let n=g.settings;return`<h1 class="page">Sozlamalar</h1>
   <div class="panel" style="max-width:640px"><div class="panel-b" style="display:grid;gap:12px">
    <label class="l" for="setName">Do'kon nomi (chekda chiqadi)<input id="setName" class="f" value="${V(n.shopName||"")}"></label>
@@ -1406,9 +1571,9 @@ function NT(){let n=g.settings;return`<h1 class="page">Sozlamalar</h1>
   <div class="panel" style="max-width:640px;margin-top:14px"><div class="panel-b" style="display:grid;gap:12px">
    <div class="note"><b>Chek printeri.</b> \xABChekni chiqarish\xBB tugmasi chop etish oynasini ochadi \u2014 chek printeringizni tanlang. Kompyuterda \xABEco Kassa.bat\xBB orqali ochsangiz, chek oynasiz, to'g'ridan-to'g'ri asosiy (default) printerga chiqadi. Windows'da chek printerini \xABAsosiy printer\xBB qilib qo'ying.</div>
    <div class="note"><b>Shtrix-kod skaneri.</b> \xABSotuv\xBB sahifasidagi qidiruv maydoni doim faol turadi. Skaner kodni o'qisa, tovar savatga o'zi tushadi. Yangi tovarni qo'shishda \xABShtrix-kod\xBB maydoniga bosib, skanerni tovarga tuting.</div>
-  </div></div>`}function lt(n,e,t){q("#modalRoot").innerHTML=`<div class="modal-bg" data-close="bg"><div class="modal" role="dialog" aria-modal="true" aria-label="${V(n)}"><div class="mh"><h3>${V(n)}</h3><button class="btn sm" data-close="x" aria-label="Yopish">\u2715</button></div><div class="mb">${e}</div>${t?`<div class="mf">${t}</div>`:""}</div></div>`;let i=q("#modalRoot input, #modalRoot select");i&&i.focus()}var et=()=>{q("#modalRoot").innerHTML=""};q("#modalRoot").addEventListener("click",n=>{let e=n.target.closest("[data-close]");e&&(e.dataset.close==="x"||n.target===e)&&et()});document.addEventListener("keydown",n=>{n.key==="Escape"&&q("#modalRoot").innerHTML&&et()});function jy(n){n=n||{},g.mpImg=void 0,g.mpBars=[...(n.barcodes||[])],g.mpBarsPid=n.id||"",lt(n.id?"Tovarni tahrirlash":"Yangi tovar",`<div class="fg">
+  </div></div>`}function lt(n,e,t){q("#modalRoot").innerHTML=`<div class="modal-bg" data-close="bg"><div class="modal" role="dialog" aria-modal="true" aria-label="${V(n)}"><div class="mh"><h3>${V(n)}</h3><button class="btn sm" data-close="x" aria-label="Yopish">\u2715</button></div><div class="mb">${e}</div>${t?`<div class="mf">${t}</div>`:""}</div></div>`;let i=q("#modalRoot input, #modalRoot select");i&&i.focus()}var et=()=>{q("#modalRoot").innerHTML=""};q("#modalRoot").addEventListener("click",n=>{let e=n.target.closest("[data-close]");e&&(e.dataset.close==="x"||n.target===e)&&et()});document.addEventListener("keydown",n=>{n.key==="Escape"&&q("#modalRoot").innerHTML&&et()});function jy(n){n=n||{},g.mpImg=void 0,g._mpOrig=null,g._mpPrev=void 0,g.mpBars=[...(n.barcodes||[])],g.mpBarsPid=n.id||"",lt(n.id?"Tovarni tahrirlash":"Yangi tovar",`<div class="fg">
     <div class="imgedit"><span id="mpImgBox">${n.img?`<img src="${n.img}" alt="">`:`<span class="ph">Rasm yo'q</span>`}</span>
-      <span style="display:grid;gap:6px"><label class="btn" for="mpImg" style="display:inline-block;text-align:center">\u{1F4F7} Rasm olish / tanlash<input type="file" id="mpImg" accept="image/*" hidden></label><button type="button" class="btn sm" data-act="mpimgdel">Rasmni olib tashlash</button></span></div>
+      <span style="display:grid;gap:6px"><label class="btn" for="mpImg" style="display:inline-block;text-align:center">\u{1F4F7} Rasm olish / tanlash<input type="file" id="mpImg" accept="image/*" hidden></label><button type="button" class="btn sm" data-act="mpimgdel">Rasmni olib tashlash</button>${xImgTools()}</span></div><div id="mpAi" style="grid-column:1/-1" hidden></div>
     <label class="l" for="mpName" style="grid-column:1/-1">Nomi<input id="mpName" class="f" value="${V(n.name||"")}"></label>
     <label class="l" for="mpBar">Shtrix-kod<span class="inrow"><input id="mpBar" class="f num" value="${V(n.barcode||"")}" placeholder="Skanerlang">${vd()?`<button type="button" class="btn sm" data-act="mpbarcam" aria-label="Kamera bilan o'qish">\u{1F4F7}</button>`:""}</span></label>
     <div style="grid-column:1/-1"><div class="l">Qo'shimcha shtrix-kodlar <span class="muted" style="font-weight:400">— shu tovar boshqa zavodda ishlab chiqarilgan bo'lsa</span></div><div id="mpBarsBox" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${mpBarsChips()}</div><span class="inrow"><input id="mpBarAdd" class="f num" placeholder="Skanerlang yoki yozib Enter bosing" autocomplete="off"><button type="button" class="btn sm" data-mpbar="add">+ Qo'shish</button>${vd()?'<button type="button" class="btn sm" data-mpbar="cam" aria-label="Kamera bilan o\'qish">\u{1F4F7}</button>':""}</span></div>

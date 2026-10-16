@@ -1,0 +1,8 @@
+Fonni tozalash uchun ishlatilgan ochiq kodli qismlar:
+
+onnxruntime-web (ort.wasm.min.js, ort-wasm-simd-threaded.*) — MIT License, Copyright (c) Microsoft Corporation.
+https://github.com/microsoft/onnxruntime
+
+u2netp.onnx — U²-Net (Qin et al.), Apache License 2.0.
+https://github.com/xuebinqin/U-2-Net
+ONNX ko'rinishi: rembg loyihasidan (MIT) — https://github.com/danielgatis/rembg
