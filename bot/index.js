@@ -31,10 +31,9 @@ const esc = s => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&g
 const B = { buys: '🧾 Xaridlarim', cb: '💰 Keshbekim', debt: '📒 Qarzim', contact: "☎️ Bog'lanish", report: '📊 Bugungi hisobot' };
 const mainKb = { keyboard: [[{ text: "🛍 Do'kon", web_app: { url: SHOP_URL } }], [{ text: B.buys }, { text: B.cb }], [{ text: B.debt }, { text: B.contact }]], resize_keyboard: true, is_persistent: true };
 const adminKb = { keyboard: [[{ text: B.report }], ...mainKb.keyboard], resize_keyboard: true, is_persistent: true };
-const BDAY_SKIP = "⏭ O'tkazib yuborish";
-const bdayKb = { keyboard: [[{ text: BDAY_SKIP }]], resize_keyboard: true, one_time_keyboard: true };
+const bdayKb = { remove_keyboard: true };
 const regDoneText = (phone) => `✅ Ro'yxatdan o'tdingiz!\n\nEndi xaridlaringiz, keshbek va qarzingizni shu yerda ko'rasiz. Do'kondan xarid qilganda kassirga shu raqamni ayting: <b>${esc(phone)}</b>`;
-function askBday(chat) { return send(chat, "🎂 <b>Tug'ilgan kuningizni</b> yozing — o'sha kuni sizni tabriklab, sovg'a tayyorlaymiz!\n\nMasalan: <b>15.03.1995</b>", bdayKb); }
+function askBday(chat) { return send(chat, "🎂 <b>Tug'ilgan kuningizni</b> yozing — o'sha kuni sizni tabriklab, sovg'a tayyorlaymiz!\n<i>Ro'yxatdan o'tishni yakunlash uchun bu majburiy.</i>\n\nMasalan: <b>15.03.1995</b>", bdayKb); }
 function parseBday(t) {
   const m = String(t || '').trim().match(/^(\d{1,2})[.\/\-\s](\d{1,2})[.\/\-\s](\d{2}|\d{4})$/);
   if (!m) return null;
@@ -124,7 +123,9 @@ async function onMessage(m) {
   }
 
   if (text === '/start' || !u) {
-    if (u && u.step === 'done' && await clientOf(u)) return send(chat, `Xush kelibsiz, <b>${esc(u.name)}</b>! Quyidagi tugmalardan foydalaning.`, (await isAdmin(from.id)) ? adminKb : mainKb);
+    const meCl = u && (u.step === 'done' || u.step === 'bday') ? await clientOf(u) : null;
+    if (meCl && !meCl.bday && !(await isAdmin(from.id))) { await db.doc(`tgUsers/${from.id}`).set({ step: 'bday' }, { merge: true }); return askBday(chat); }
+    if (u && u.step === 'done' && meCl) return send(chat, `Xush kelibsiz, <b>${esc(u.name)}</b>! Quyidagi tugmalardan foydalaning.`, (await isAdmin(from.id)) ? adminKb : mainKb);
     return askName(chat, from);
   }
 
@@ -158,7 +159,6 @@ async function onMessage(m) {
 
   if (u.step === 'bday') {
     const done = async (msg) => { await db.doc(`tgUsers/${from.id}`).set({ step: 'done', bdayAsked: true }, { merge: true }); return send(chat, msg, (await isAdmin(from.id)) ? adminKb : mainKb); };
-    if (text === BDAY_SKIP) return done(u.phone ? regDoneText(u.phone) : 'Mayli 👌 Quyidagi tugmalardan foydalaning.');
     const bd = parseBday(text);
     if (!bd) return send(chat, "Sanani tushunmadim 🙏 Iltimos, shu ko'rinishda yozing: <b>15.03.1995</b> (kun.oy.yil)", bdayKb);
     if (u.clientId) await db.doc(`clients/${u.clientId}`).update({ bday: bd });
@@ -170,9 +170,9 @@ async function onMessage(m) {
   const kb = amAdmin ? adminKb : mainKb;
   const cl = await clientOf(u);
   if (!cl) { await db.doc(`tgUsers/${from.id}`).set({ step: 'name' }, { merge: true }); return askName(chat, from); }
-  // Oldin ro'yxatdan o'tgan, lekin tug'ilgan kuni yo'q mijozdan bir marta so'raymiz
-  if (!cl.bday && !u.bdayAsked && !amAdmin) {
-    await db.doc(`tgUsers/${from.id}`).set({ step: 'bday', bdayAsked: true }, { merge: true });
+  // Tug'ilgan kuni yo'q mijoz — majburiy: kiritmaguncha bot ishlamaydi
+  if (!cl.bday && !amAdmin) {
+    await db.doc(`tgUsers/${from.id}`).set({ step: 'bday' }, { merge: true });
     return askBday(chat);
   }
 
