@@ -193,6 +193,34 @@ setInterval(async () => {
   } catch (e) { console.error('daily', e.message); }
 }, 60e3);
 
+// Inventarizatsiya: har oyning belgilangan kunida (Sozlama: meta/settings.invDay, 0 = o'chiq) soat 10:00 da eslatma.
+setInterval(async () => {
+  try {
+    const t = new Date(Date.now() + 5 * 3600e3); if (t.getUTCHours() < 10) return;
+    const st = await settings(); const day = st.invDay == null ? 1 : Number(st.invDay) || 0; if (!day || t.getUTCDate() !== day) return;
+    const key = t.toISOString().slice(0, 7); const bs = await db.doc('meta/botState').get();
+    if (bs.exists && bs.data().lastInvRemind === key) return;
+    await db.doc('meta/botState').set({ lastInvRemind: key }, { merge: true });
+    const m0 = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), 1) - 5 * 3600e3;
+    const inv = (await db.collection('inventory').get()).docs.map(d => d.data());
+    if (inv.some(x => x.status === 'done' && Number(x.finished) >= m0)) return;
+    const open = inv.some(x => x.status === 'open');
+    await notifyAdmins(open
+      ? "📋 <b>Inventarizatsiya boshlangan, lekin hali yakunlanmagan.</b>\nKassada «Inventarizatsiya» bo'limini ochib, sanashni tugating va «Yakunlash» bosing."
+      : "📋 <b>Inventarizatsiya vaqti keldi!</b>\nBu oy tovarlar hali sanalmagan. Kassada «Inventarizatsiya» bo'limini oching va «Inventarizatsiyani boshlash» tugmasini bosing.");
+  } catch (e) { console.error('inv remind', e.message); }
+}, 60e3);
+
+// Inventarizatsiya yakunlanganda rahbarga qisqa hisobot.
+db.collection('inventory').where('status', '==', 'done').onSnapshot(async snap => {
+  for (const ch of snap.docChanges()) {
+    if (ch.type === 'removed') continue; const x = ch.doc.data(); if (x.notified || Number(x.finished) < START) continue;
+    await ch.doc.ref.update({ notified: true });
+    const bad = (x.items || []).filter(i => i.diff).sort((a, b) => a.diff - b.diff).slice(0, 10);
+    await notifyAdmins(`📋 <b>Inventarizatsiya yakunlandi</b> · ${fmt(x.finished)}\n👤 ${esc(x.finishedBy || '')}\nSanaldi: <b>${x.nCount || 0}</b> ta tovar, farqi bor: <b>${x.nDiff || 0}</b> ta\n🔻 Kam chiqdi: <b>${money(x.short)} so'm</b>\n🔺 Ortiqcha: <b>${money(x.over)} so'm</b>${bad.length ? '\n\n' + bad.map(i => `• ${esc(i.name)}: ${i.sys} → ${i.real} (${i.diff > 0 ? '+' : ''}${i.diff})`).join('\n') : ''}`);
+  }
+}, e => console.error('inventory listener', e.message));
+
 async function main() {
   const me = await tg('getMe');
   if (!me.ok) { console.error('BOT_TOKEN noto\'g\'ri: Telegram uni qabul qilmadi. Token formati: ' + TOKEN.replace(/:.*/, ':***') + ' (uzunligi ' + TOKEN.length + ')'); return; }
