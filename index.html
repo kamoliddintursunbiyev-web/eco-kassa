@@ -1396,7 +1396,7 @@ function xAnalysisPage(){
   prev&&last.cost>prev.cost&&last.ts>Date.now()-120*864e5&&rise.push({p,prev,last,pct:Math.round((last.cost-prev.cost)/prev.cost*100)})});
  gt().forEach(p=>{let c=E(p.cost),pr=E(p.price);if(c>0&&pr>0){let m=Math.round((pr-c)/pr*100);m<mm&&lowM.push({p,m,sug:Math.ceil(c/(1-mm/100)/1000)*1000})}});
  rise.sort((a,b)=>b.pct-a.pct);lowM.sort((a,b)=>a.m-b.m);
- return`<h1 class="page">Tahlil</h1>${ready?"":'<div class="note" style="margin-bottom:12px">Eski savdo va kirimlar yuklanmoqda…</div>'}
+ return`<h1 class="page">Tahlil</h1>${xAiChat()}${ready?"":'<div class="note" style="margin-bottom:12px">Eski savdo va kirimlar yuklanmoqda…</div>'}
  <div class="kpis"><div class="kpi warn"><div class="k">Sotilmay turgan tovarlar</div><div class="v num">${dead.length} ta</div></div><div class="kpi warn"><div class="k">Ularga qotgan pul</div><div class="v num">${O(deadVal)}</div></div><div class="kpi"><div class="k">3 haftada tugaydi</div><div class="v num">${fc.length} ta</div></div><div class="kpi ${lowM.length?"warn":""}"><div class="k">Foydasi past</div><div class="v num">${lowM.length} ta</div></div></div>
  <div class="panel" style="margin-top:14px"><div class="panel-h"><h2>\u{1F4A4} Sotilmay turgan ("o'lik") tovarlar</h2><span class="spacer"></span><span class="seg">${[30,60,90].map(d=>`<button data-deadd="${d}" aria-pressed="${dd===d}">${d} kun</button>`).join("")}</span></div>
  <div class="tbl-wrap" style="max-height:45vh"><table class="t"><thead><tr><th>Tovar</th><th class="r">Qoldiq</th><th>Oxirgi sotuv</th><th class="r">Qotgan pul</th></tr></thead><tbody>
@@ -1427,6 +1427,149 @@ function xCostWarn(l){
   let mm=E((g.settings||{}).minMargin??20);
   lt("Tannarx oshdi",`<div class="note">Quyidagi tovarlarning kirim narxi oshdi. Sotuv narxini tekshiring.</div><div class="tbl-wrap" style="margin-top:8px"><table class="t"><thead><tr><th>Tovar</th><th class="r">Kirim narxi</th><th class="r">Sotuv narxi</th><th class="r">Tavsiya</th></tr></thead><tbody>${L.map(x=>{let s=Math.max(E(x.p.price),Math.ceil(x.n/(1-mm/100)/1000)*1000),m=E(x.p.price)?Math.round((E(x.p.price)-x.n)/E(x.p.price)*100):0;return`<tr><td>${V(x.p.name)}</td><td class="r num">${O(x.o)} → <b>${O(x.n)}</b></td><td class="r num">${O(x.p.price)} <span class="pill ${m<mm?"low":""}">${m}%</span></td><td class="r">${s>E(x.p.price)?`<button class="btn sm primary" data-setprice="${V(x.p.id)}|${s}">${O(s)} qilish</button>`:'<span class="pill ok">yetarli</span>'}</td></tr>`}).join("")}</tbody></table></div>`)},900)}
 }
+
+/* ---------- AI yordamchi (Tahlil bo'limi) ---------- */
+var xAicQuick=[
+ ["\u{1F4CA} Hafta qanday o'tdi?","Bu hafta savdo qanday o'tdi? O'tgan hafta bilan solishtirib ayt."],
+ ["\u{1F6D2} Nima buyurtma qilay?","Hozir nimalarni buyurtma qilishim kerak? Har biridan nechta olishni ayt."],
+ ["\u{1F4A4} Qotib qolgan tovarlar","Qaysi tovarlar sotilmay pulni qotirib turibdi? Ular bilan nima qilay?"],
+ ["\u{1F4B0} Foyda","Qaysi tovarlar eng ko'p foyda keltiryapti, qaysilari kam? Narxni qayerda o'zgartirish kerak?"],
+ ["\u{1F381} Aksiya g'oyasi","Shu hafta uchun bitta aniq aksiya g'oyasini ber: qaysi tovarlarga, qancha chegirma."]
+];
+function xAicFmt(t){
+ return V(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/^\s*[-*•]\s+/gm,"• ").replace(/^#+\s*/gm,"").replace(/\n/g,"<br>")
+}
+function xAiChat(){
+ let c=g._aic||(g._aic={log:[],q:""}),key=(g.settings||{}).aiKey;
+ if(!key)return`<div class="panel" style="margin-bottom:14px"><div class="panel-h"><h2>\u{1F916} AI yordamchi</h2></div><div class="panel-b"><div class="note">AI yordamchi uchun Google Gemini kaliti kerak. Uni <b>Aksiya va mijozlar → Rasm sozlamalari</b> bo'limida kiritasiz (AI rasm uchun ishlatiladigan kalitning o'zi).</div></div></div>`;
+ let mic=!!(window.SpeechRecognition||window.webkitSpeechRecognition);
+ return`<div class="panel" style="margin-bottom:14px"><div class="panel-h"><h2>\u{1F916} AI yordamchi</h2><span class="spacer"></span>${c.log.length?'<button class="btn sm" data-x="aicclr">Tozalash</button>':""}</div>
+ <div class="panel-b" style="display:grid;gap:10px">
+ <div class="chips" style="margin:0">${xAicQuick.map((x,i)=>`<button type="button" data-x="aicq" data-i="${i}" ${c.busy?"disabled":""}>${x[0]}</button>`).join("")}</div>
+ <div style="display:flex;gap:8px"><input id="aicQ" class="f" style="flex:1;min-width:0" placeholder="Savolingizni yozing yoki \u{1F3A4} bosib gapiring" value="${V(c.q||"")}" ${c.busy?"disabled":""}>
+ ${mic?`<button type="button" class="btn" data-x="aicmic" title="Ovoz bilan so'rash" ${c.busy?"disabled":""}>${c.rec?"⏺ Tinglayapman…":"\u{1F3A4}"}</button>`:""}
+ <button type="button" class="btn primary" data-x="aicask" ${c.busy?"disabled":""}>So'rash</button></div>
+ ${c.busy?'<div class="muted">⏳ AI savdo va ombor ma\'lumotlarini ko\'rib chiqyapti…</div>':""}
+ ${c.log.slice().reverse().map((m,ri)=>{let i=c.log.length-1-ri;return`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+  <div class="muted" style="font-size:13px;margin-bottom:6px">❓ ${V(m.q)}</div>
+  ${m.err?`<div class="note">❌ ${V(m.err)}</div>`:`<div style="line-height:1.55">${xAicFmt(m.a||"")}</div>
+  <div style="margin-top:8px"><button type="button" class="btn sm" data-x="aicsay" data-i="${i}">${c.say===i?"⏹ To'xtatish":"\u{1F50A} Eshitish"}</button></div>`}
+ </div>`}).join("")}
+ <div class="muted" style="font-size:12px">AI faqat do'kon raqamlarini ko'radi (mijozlarning ism va telefonlari yuborilmaydi). 1 savol ≈ 20–50 so'm (Google hisobidan). Javobni tekshirib, keyin qaror qiling.</div>
+ </div></div>`
+}
+function xAiData(){
+ let now=Date.now(),D=864e5,uq=l=>l.filter((x,i,a)=>!x.id||a.findIndex(y=>y.id===x.id)===i),
+  S=xRange("sales",now-60*D,1/0),R=xRange("returns",now-60*D,1/0),X=xRange("expenses",now-60*D,1/0),
+  sales=uq((S.list||[]).concat(g.sales||[])).filter(s=>s.ts>=now-60*D),
+  rets=uq((R.list||[]).concat(g.returns||[])).filter(s=>s.ts>=now-60*D),
+  exps=uq((X.list||[]).concat(g.expenses||[])).filter(s=>s.ts>=now-30*D&&!s.void),
+  tz=t=>new Date(t+5*3600e3),day=t=>tz(t).toISOString().slice(0,10),
+  cost=s=>(s.items||[]).reduce((y,i)=>y+E(i.cost)*E(i.qty),0),
+  per=(a,b)=>{let L=sales.filter(s=>s.ts>=now-a*D&&s.ts<now-b*D),t=L.reduce((x,s)=>x+E(s.total),0),p=t-L.reduce((x,s)=>x+cost(s),0);return`savdo ${O(t)}, foyda ${O(p)}, cheklar ${L.length}, o'rtacha chek ${O(L.length?t/L.length:0)}`},
+  out=[];
+ out.push(`Do'kon: ${(g.settings||{}).shopName||"Eco Aroma"} (kosmetika). Bugun: ${day(now)}, ${["yakshanba","dushanba","seshanba","chorshanba","payshanba","juma","shanba"][tz(now).getUTCDay()]}. Pul: so'm.`);
+ out.push(`\nDAVRLAR:\nOxirgi 7 kun: ${per(7,0)}\nUndan oldingi 7 kun: ${per(14,7)}\nOxirgi 30 kun: ${per(30,0)}\nUndan oldingi 30 kun: ${per(60,30)}`);
+ let byDay={};sales.filter(s=>s.ts>=now-14*D).forEach(s=>{let k=day(s.ts);byDay[k]=byDay[k]||[0,0];byDay[k][0]+=E(s.total);byDay[k][1]++});
+ out.push(`\nKUNLIK SAVDO (14 kun, sana: summa / cheklar):\n${Object.keys(byDay).sort().map(k=>`${k}: ${O(byDay[k][0])} / ${byDay[k][1]}`).join("\n")||"yo'q"}`);
+ let wd=[0,0,0,0,0,0,0],hr={},s30=sales.filter(s=>s.ts>=now-30*D);
+ s30.forEach(s=>{let d=tz(s.ts);wd[d.getUTCDay()]+=E(s.total);let h=d.getUTCHours();hr[h]=(hr[h]||0)+E(s.total)});
+ out.push(`\nHAFTA KUNLARI (30 kun): ${["Ya","Du","Se","Ch","Pa","Ju","Sh"].map((n,i)=>n+" "+O(wd[i])).join(", ")}\nSOATLAR (30 kun): ${Object.keys(hr).sort((a,b)=>a-b).map(h=>h+":00 "+O(hr[h])).join(", ")}`);
+ let st={},cat={},sel={};
+ s30.forEach(s=>{sel[s.seller||"—"]=(sel[s.seller||"—"]||0)+E(s.total);(s.items||[]).forEach(i=>{let x=st[i.pid]=st[i.pid]||{q:0,v:0,c:0,n:i.name};x.q+=E(i.qty);x.v+=E(i.qty)*E(i.price);x.c+=E(i.qty)*E(i.cost);let p=g.products[i.pid],k=p&&p.cat||"Boshqa";cat[k]=(cat[k]||0)+E(i.qty)*E(i.price)})});
+ rets.filter(r=>r.ts>=now-30*D).forEach(r=>(r.items||[]).forEach(i=>{let x=st[i.pid];x&&(x.q-=E(i.qty))}));
+ let rt=xRates(30),prods=gt(),top=Object.entries(st).sort((a,b)=>b[1].v-a[1].v).slice(0,40);
+ out.push(`\nKATEGORIYALAR (30 kun savdo): ${Object.entries(cat).sort((a,b)=>b[1]-a[1]).map(([k,v])=>k+" "+O(v)).join(", ")||"yo'q"}`);
+ out.push(`SOTUVCHILAR (30 kun): ${Object.entries(sel).map(([k,v])=>k+" "+O(v)).join(", ")||"yo'q"}`);
+ out.push(`\nENG KO'P SOTILGAN 40 TA TOVAR (30 kun) — nom | sotildi dona | tushum | foyda | qoldiq | narx | tannarx | necha kunga yetadi:\n${top.map(([pid,x])=>{let p=g.products[pid]||{},r=rt[pid]||0;return`${x.n} | ${O(x.q)} | ${O(x.v)} | ${O(x.v-x.c)} | ${p.qty==null?"?":O(p.qty)} | ${O(p.price)} | ${O(p.cost)} | ${r>0?Math.round(Math.max(0,E(p.qty))/r)+" kun":"—"}`}).join("\n")||"savdo yo'q"}`);
+ let fc=prods.filter(p=>rt[p.id]>0).map(p=>({p,r:rt[p.id],dl:Math.max(0,E(p.qty))/rt[p.id]})).filter(x=>x.dl<=21).sort((a,b)=>a.dl-b.dl).slice(0,40);
+ out.push(`\nTEZ ORADA TUGAYDIGANLAR (oxirgi 30 kun sotuviga qarab) — nom | kuniga sotiladi | qoldiq | necha kunda tugaydi | 30 kunga yetishi uchun olish kerak | yetkazib beruvchi:\n${fc.map(x=>`${x.p.name} | ${x.r.toFixed(1)} | ${O(x.p.qty)} | ${Math.round(x.dl)} | ${Math.max(0,Math.ceil(x.r*30-Math.max(0,E(x.p.qty))))} | ${x.p.sup||"—"}`).join("\n")||"yo'q"}`);
+ let last={};sales.forEach(s=>(s.items||[]).forEach(i=>{last[i.pid]=Math.max(last[i.pid]||0,s.ts)}));
+ let dead=prods.filter(p=>E(p.qty)>0&&!last[p.id]&&E(p.created||0)<now-60*D).map(p=>({p,v:E(p.qty)*E(p.cost)})).sort((a,b)=>b.v-a.v);
+ out.push(`\n60 KUNDA BIRORTA HAM SOTILMAGAN TOVARLAR: jami ${dead.length} ta, qotgan pul ${O(dead.reduce((s,x)=>s+x.v,0))} (tannarxda). Eng qimmatlari — nom | qoldiq | tannarx | narx:\n${dead.slice(0,25).map(x=>`${x.p.name} | ${O(x.p.qty)} | ${O(x.p.cost)} | ${O(x.p.price)}`).join("\n")||"yo'q"}`);
+ let mm=E((g.settings||{}).minMargin??20),low=prods.filter(p=>E(p.cost)>0&&E(p.price)>0).map(p=>({p,m:Math.round((E(p.price)-E(p.cost))/E(p.price)*100)})).filter(x=>x.m<mm).sort((a,b)=>a.m-b.m).slice(0,25);
+ out.push(`\nFOYDASI ${mm}% DAN PAST TOVARLAR — nom | tannarx | narx | foyda %:\n${low.map(x=>`${x.p.name} | ${O(x.p.cost)} | ${O(x.p.price)} | ${x.m}%`).join("\n")||"yo'q"}`);
+ let neg=prods.filter(p=>E(p.qty)<0).length,zero=prods.filter(p=>E(p.qty)===0).length,sv=prods.reduce((s,p)=>s+Math.max(0,E(p.qty))*E(p.cost),0);
+ out.push(`\nOMBOR: ${prods.length} xil tovar, ombordagi tovar tannarxda ${O(sv)}, qoldig'i 0: ${zero} ta, minusda: ${neg} ta.`);
+ let ec={};exps.forEach(x=>{ec[x.cat||"Boshqa"]=(ec[x.cat||"Boshqa"]||0)+E(x.amount)});
+ out.push(`XARAJATLAR (30 kun): ${Object.entries(ec).map(([k,v])=>k+" "+O(v)).join(", ")||"yo'q"}; qaytarishlar (30 kun): ${rets.filter(r=>r.ts>=now-30*D).length} ta.`);
+ return{text:out.join("\n"),ready:S.ready&&R.ready&&X.ready}
+}
+async function xGemTextModel(key){
+ if(g._gemTxt)return g._gemTxt;
+ try{
+  let r=await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key="+encodeURIComponent(key)),j=await r.json().catch(()=>({}));
+  let ms=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent")).map(m=>m.name.replace(/^models\//,"")).filter(n=>/^gemini-[\d.]+-flash(-lite)?(-\d+)?$/.test(n)),
+   sc=n=>parseFloat((n.match(/gemini-([\d.]+)/)||[0,0])[1])*10+(/lite/.test(n)?-3:0);
+  ms.sort((a,b)=>sc(b)-sc(a));if(ms.length)return g._gemTxt=ms[0]
+ }catch(e){console.error(e)}
+ return g._gemTxt="gemini-2.5-flash"
+}
+async function xAicAsk(qs){
+ let c=g._aic||(g._aic={log:[],q:""});qs=String(qs||"").trim();if(!qs||c.busy)return;
+ let key=(g.settings||{}).aiKey;if(!key){J("Gemini kaliti kiritilmagan");return}
+ c.busy=!0;c.q="";se();
+ let m={q:qs,ts:Date.now()};
+ try{
+  let d=xAiData();
+  if(!d.ready){await new Promise(r=>setTimeout(r,2500));d=xAiData()}
+  let model=await xGemTextModel(key),hist=[];
+  c.log.slice(-3).filter(x=>x.a).forEach(x=>{hist.push({role:"user",parts:[{text:x.q}]},{role:"model",parts:[{text:x.a}]})});
+  let sys=`Sen "${(g.settings||{}).shopName||"Eco Aroma"}" kosmetika do'konining tajribali savdo tahlilchisisan. Do'kon egasiga yordam berasan.
+QOIDALAR:
+- Faqat o'zbek tilida (lotin yozuvida), oddiy va tushunarli so'zlar bilan yoz. Egasi ko'p o'qishni yoqtirmaydi: javob QISQA bo'lsin — 3–8 qator.
+- Eng muhim xulosani birinchi qatorda ayt. Keyin aniq tavsiya: nima qilish, qaysi tovar, nechta, qancha so'm.
+- Faqat quyidagi ma'lumotga tayan. Ma'lumot yetmasa, buni ochiq ayt; raqam to'qima.
+- Summalarni "1 250 000 so'm" ko'rinishida yoz. Jadval ishlatma. Faqat **qalin** va "- " ro'yxatdan foydalan.
+- Umumiy maslahat emas, aynan shu do'kon raqamlariga asoslangan maslahat ber.
+
+DO'KON MA'LUMOTLARI:
+${d.text}`;
+  let r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:hist.concat([{role:"user",parts:[{text:qs}]}]),generationConfig:{temperature:.4,maxOutputTokens:2048}})}),
+   j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error&&j.error.message||"HTTP "+r.status);
+  let a=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(x=>x.text||"").join("").trim();
+  if(!a)throw new Error("AI javob qaytarmadi. Savolni boshqacha yozib ko'ring.");
+  m.a=a
+ }catch(e){console.error(e);m.err=/quota|exhausted|429/i.test(e.message)?"Google kalitining limiti tugagan. Birozdan keyin urinib ko'ring.":/API key|invalid|403|401/i.test(e.message)?"Gemini kaliti ishlamadi. Kalitni tekshiring.":/fetch|network/i.test(e.message)?"Internet yo'q yoki Google javob bermadi.":e.message}
+ c.log.push(m);c.log=c.log.slice(-10);c.busy=!1;se()
+}
+function xAicMic(){
+ let c=g._aic||(g._aic={log:[],q:""}),SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;
+ if(c.rec){try{c.rec.stop()}catch(e){}return}
+ let r=new SR();r.lang="uz-UZ";r.interimResults=!1;r.maxAlternatives=1;c.rec=r;se();
+ r.onresult=e=>{let t=((e.results[0]||[])[0]||{}).transcript||"";c.rec=null;if(t.trim())xAicAsk(t);else se()};
+ r.onerror=e=>{c.rec=null;se();J(e.error==="not-allowed"?"Mikrofonga ruxsat bering":"Ovoz tushunilmadi, qayta urinib ko'ring")};
+ r.onend=()=>{if(c.rec===r){c.rec=null;se()}};
+ try{r.start()}catch(e){c.rec=null;se()}
+}
+function xAicStop(){let c=g._aic||{};c.audio&&(c.audio.pause(),c.audio=null);window.speechSynthesis&&speechSynthesis.cancel();c.say=null}
+async function xAicSay(i){
+ let c=g._aic||{},m=c.log&&c.log[i];if(!m||!m.a)return;
+ if(c.say===i){xAicStop();se();return}
+ xAicStop();c.say=i;se();
+ let txt=m.a.replace(/\*\*/g,"").replace(/^\s*[-*•#]+\s*/gm,"").replace(/\n+/g,". ").replace(/\s+/g," ").slice(0,1500),key=(g.settings||{}).aiKey;
+ try{
+  if(!m.wav){
+   let r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(key)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:"Quyidagi o'zbekcha matnni tinch, aniq ovozda o'qib ber: "+txt}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Kore"}}}}})}),
+    j=await r.json().catch(()=>({}));
+   if(!r.ok)throw new Error(j.error&&j.error.message||"HTTP "+r.status);
+   let p=((((j.candidates||[])[0]||{}).content||{}).parts||[]).find(x=>x.inlineData||x.inline_data);if(!p)throw new Error("ovoz yo'q");
+   let d=p.inlineData||p.inline_data,rate=+((String(d.mimeType||d.mime_type).match(/rate=(\d+)/)||[0,24000])[1]),pcm=Uint8Array.from(atob(d.data),ch=>ch.charCodeAt(0)),
+    h=new DataView(new ArrayBuffer(44)),w=(o,s)=>[...s].forEach((ch,k)=>h.setUint8(o+k,ch.charCodeAt(0)));
+   w(0,"RIFF");h.setUint32(4,36+pcm.length,!0);w(8,"WAVE");w(12,"fmt ");h.setUint32(16,16,!0);h.setUint16(20,1,!0);h.setUint16(22,1,!0);h.setUint32(24,rate,!0);h.setUint32(28,rate*2,!0);h.setUint16(32,2,!0);h.setUint16(34,16,!0);w(36,"data");h.setUint32(40,pcm.length,!0);
+   m.wav=URL.createObjectURL(new Blob([h.buffer,pcm],{type:"audio/wav"}))
+  }
+  if(c.say!==i)return;
+  let au=new Audio(m.wav);c.audio=au;au.onended=()=>{if(c.audio===au){c.audio=null;c.say=null;se()}};await au.play()
+ }catch(e){
+  console.error(e);if(c.say!==i)return;
+  if(window.speechSynthesis){let u=new SpeechSynthesisUtterance(txt),v=speechSynthesis.getVoices().find(x=>/^uz/i.test(x.lang))||speechSynthesis.getVoices().find(x=>/^tr/i.test(x.lang));v&&(u.voice=v,u.lang=v.lang);u.onend=()=>{if(c.say===i){c.say=null;se()}};speechSynthesis.speak(u)}
+  else{c.say=null;se();J("Ovozli o'qib bo'lmadi")}
+ }
+}
+document.addEventListener("input",n=>{n.target&&n.target.id==="aicQ"&&g._aic&&(g._aic.q=n.target.value)});
+document.addEventListener("keydown",n=>{n.target&&n.target.id==="aicQ"&&n.key==="Enter"&&(n.preventDefault(),n.stopPropagation(),xAicAsk(n.target.value))});
 
 /* ---------- Hodisalar ---------- */
 document.addEventListener("click",async n=>{
@@ -1641,6 +1784,11 @@ document.addEventListener("click",async n=>{
  else if(a==="aigen"){g._aiExtra=((q("#aiExtra")||{}).value||"");q("#aiUseImg")&&(g._aiUse=q("#aiUseImg").checked);xAiGen(t,d.ctx||"prod")}
  else if(a==="aiuse"){g.mpImg=g._aiSmall;xImgShow(g.mpImg);let b=q("#mpAi");b&&(b.innerHTML="",b.hidden=!0);xImgMsg("✅ AI rasm qo'yildi — \xABSaqlash\xBB ni bosing")}
  else if(a==="aidl"&&g._aiRes){let l=document.createElement("a");l.href=g._aiRes;l.download=`eco-aroma-reklama-${Date.now()}.png`;document.body.appendChild(l);l.click();l.remove()}
+ else if(a==="aicask")xAicAsk((q("#aicQ")||{}).value);
+ else if(a==="aicq")xAicAsk(xAicQuick[+d.i][1]);
+ else if(a==="aicmic")xAicMic();
+ else if(a==="aicsay")xAicSay(+d.i);
+ else if(a==="aicclr"){xAicStop();g._aic={log:[],q:""};se()}
  else if(a==="admodal")xAdModal();
  else if(a==="aibatch")xImgBatch(t);
  else if(a==="aikeysave"){
