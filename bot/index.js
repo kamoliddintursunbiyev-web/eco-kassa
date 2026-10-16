@@ -200,6 +200,16 @@ setInterval(async () => {
   } catch (e) { console.error('daily', e.message); }
 }, 60e3);
 
+// Omborga kirim qilinganda rahbarga xabar: kim, kimdan, qancha.
+db.collection('purchases').where('ts', '>=', START).onSnapshot(async snap => {
+  for (const ch of snap.docChanges()) {
+    if (ch.type !== 'added') continue; const x = ch.doc.data(); if (x.notified) continue;
+    await ch.doc.ref.update({ notified: true }).catch(() => {});
+    const n = (x.items || []).reduce((s, i) => s + (Number(i.qty) || 0), 0);
+    await notifyAdmins(`📥 <b>Omborga kirim</b>\n👤 Qabul qildi: <b>${esc(x.seller || '—')}</b>\n🚚 ${esc(x.supplierName || '')}\n📦 ${(x.items || []).length} xil · ${n} dona · ${money(x.total)} so'm${Number(x.debt) ? `\n📒 Qarzga: ${money(x.debt)} so'm` : ''}\n${(x.items || []).slice(0, 8).map(i => `• ${esc(i.name)} × ${i.qty}`).join('\n')}`);
+  }
+}, e => console.error('purchases listener', e.message));
+
 // Mijozlarga ommaviy xabar: kassadagi «Aksiya va mijozlar» bo'limidan navbatga qo'yiladi.
 let bcBusy = false;
 async function runBroadcasts() {
