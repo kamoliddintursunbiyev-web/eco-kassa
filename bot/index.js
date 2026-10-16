@@ -5,6 +5,7 @@
 //   SHOP_URL        — (ixtiyoriy) do'kon sahifasi manzili
 import admin from 'firebase-admin';
 import { createHash, pbkdf2Sync } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 
 const TOKEN = ((process.env.BOT_TOKEN || '').match(/\d{6,}:[A-Za-z0-9_-]{30,}/) || [''])[0];
 const SA = (process.env.FIREBASE_SA || '').trim();
@@ -59,7 +60,13 @@ async function dailyReport(title) {
   const neg = prods.filter(p => Number(p.qty) < 0).length, low = prods.filter(p => Number(p.qty) >= 0 && Number(p.qty) <= (Number(p.min) || 3)).length;
   const cl = (await db.collection('clients').get()).docs.map(d => d.data()); const cdebt = cl.reduce((x, c) => x + Math.max(0, Number(c.debt) || 0), 0);
   const ord = (await db.collection('orders').where('ts', '>=', a).get()).docs.map(d => d.data());
-  return `📊 <b>${title}</b>\n\n💵 Savdo: <b>${money(tot)} so'm</b>${pct === null ? '' : ` (${pct >= 0 ? '▲' : '▼'}${Math.abs(pct)}% kechaga)`}\n🧾 Cheklar: ${T.length} · o'rtacha ${money(T.length ? tot / T.length : 0)}\n📈 Foyda (taxminiy): ${money(tot - cost(T))}\n💳 Naqd ${money(sum(T, 'cash'))} · Karta ${money(sum(T, 'card'))}\n📒 Qarzga: ${money(sum(T, 'debt'))} · Chegirma: ${money(sum(T, 'discount'))}\n📨 Telegram buyurtmalar: ${ord.length}${Object.keys(byS).length ? `\n\n👤 Sotuvchilar:\n${Object.entries(byS).map(([k, v]) => `• ${esc(k)} — ${money(v)}`).join('\n')}` : ''}${top.length ? `\n\n🏆 Ko'p sotilgan:\n${top.map(([k, v]) => `• ${esc(k)} × ${v}`).join('\n')}` : ''}\n\n⚠️ Ombor: ${neg} ta minusda, ${low} ta tugayapti\n👥 Mijozlar qarzi: ${money(cdebt)} so'm`;
+  const rets = (await db.collection('returns').where('ts', '>=', a).get()).docs.map(d => d.data()).filter(r => r.ts < b);
+  const exps = (await db.collection('expenses').where('ts', '>=', a).get()).docs.map(d => d.data()).filter(x => x.ts < b && !x.void);
+  const rSum = rets.reduce((x, r) => x + (Number(r.amount) || 0), 0), eSum = exps.reduce((x, e) => x + (Number(e.amount) || 0), 0);
+  const st = await settings(); const lim = st.expDays == null ? 60 : Number(st.expDays) || 60; const today = dayStart(0);
+  const expSoon = []; prods.forEach(p => { let Q = Math.max(0, Number(p.qty) || 0); [...(p.expiries || [])].filter(x => x && x.d).sort((x, y) => x.d < y.d ? 1 : -1).forEach(x => { if (Q <= 0) return; const t = Math.min(Q, Number(x.q) || Q); Q -= t; const dl = Math.round((Date.parse(x.d + 'T00:00:00+05:00') - today) / 864e5); if (dl <= lim) expSoon.push({ n: p.name, d: x.d, dl, q: t }); }); });
+  expSoon.sort((x, y) => x.dl - y.dl);
+  return `📊 <b>${title}</b>\n\n💵 Savdo: <b>${money(tot)} so'm</b>${pct === null ? '' : ` (${pct >= 0 ? '▲' : '▼'}${Math.abs(pct)}% kechaga)`}\n🧾 Cheklar: ${T.length} · o'rtacha ${money(T.length ? tot / T.length : 0)}\n📈 Foyda (taxminiy): ${money(tot - cost(T))}\n💳 Naqd ${money(sum(T, 'cash'))} · Karta ${money(sum(T, 'card'))}\n📒 Qarzga: ${money(sum(T, 'debt'))} · Chegirma: ${money(sum(T, 'discount'))}\n📨 Telegram buyurtmalar: ${ord.length}${Object.keys(byS).length ? `\n\n👤 Sotuvchilar:\n${Object.entries(byS).map(([k, v]) => `• ${esc(k)} — ${money(v)}`).join('\n')}` : ''}${top.length ? `\n\n🏆 Ko'p sotilgan:\n${top.map(([k, v]) => `• ${esc(k)} × ${v}`).join('\n')}` : ''}${rets.length ? `\n↩️ Qaytarish: ${rets.length} ta · ${money(rSum)} so'm` : ''}${exps.length ? `\n🧾 Xarajat: ${money(eSum)} so'm` : ''}\n\n⚠️ Ombor: ${neg} ta minusda, ${low} ta tugayapti${expSoon.length ? `\n⏳ Muddati yaqin yoki o'tgan: ${expSoon.length} ta\n${expSoon.slice(0, 5).map(x => `• ${esc(x.n)} — ${x.d.split('-').reverse().join('.')} (${x.dl < 0 ? -x.dl + ' kun o\'tgan' : x.dl + ' kun qoldi'})`).join('\n')}` : ''}\n👥 Mijozlar qarzi: ${money(cdebt)} so'm`;
 }
 
 async function send(chat, text, kb) { return tg('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', reply_markup: kb }); }
@@ -191,6 +198,32 @@ setInterval(async () => {
     await db.doc('meta/botState').set({ lastDaily: key }, { merge: true });
     await notifyAdmins(await dailyReport(`Kunlik hisobot · ${key.split('-').reverse().join('.')}`));
   } catch (e) { console.error('daily', e.message); }
+}, 60e3);
+
+// Har kuni 22:00 da to'liq zaxira fayli rahbarga Telegramda yuboriladi (kassadagi «Zaxiradan tiklash» bilan tiklanadi).
+async function sendBackup(key) {
+  const cols = ['products', 'clients', 'suppliers', 'sales', 'payments', 'purchases', 'meta', 'returns', 'expenses', 'shifts', 'inventory', 'stockLog'];
+  const docs = [];
+  for (const c of cols) (await db.collection(c).get()).docs.forEach(d => { if (!(c === 'meta' && d.id === 'botState')) docs.push([c + '/' + d.id, d.data()]); });
+  let buf = Buffer.from(JSON.stringify({ app: 'eco-aroma-kassa', v: 2, ts: Date.now(), docs })), name = `eco-kassa-zaxira-${key}.json`;
+  if (buf.length > 45e6) { buf = gzipSync(buf); name += '.gz'; }
+  for (const id of await admins()) {
+    const fd = new FormData();
+    fd.append('chat_id', String(id));
+    fd.append('caption', `💾 Kunlik zaxira · ${key.split('-').reverse().join('.')} · ${docs.length} ta yozuv\nKerak bo'lsa: Kassa → Sozlamalar → «Zaxiradan tiklash».`);
+    fd.append('document', new Blob([buf]), name);
+    const r = await fetch(API + 'sendDocument', { method: 'POST', body: fd }).then(x => x.json()).catch(e => ({ ok: false, description: e.message }));
+    if (!r.ok) console.error('backup send', r.description);
+  }
+}
+setInterval(async () => {
+  try {
+    const t = new Date(Date.now() + 5 * 3600e3); if (t.getUTCHours() < 22) return;
+    const key = t.toISOString().slice(0, 10); const bs = await db.doc('meta/botState').get();
+    if (bs.exists && bs.data().lastBackup === key) return;
+    await db.doc('meta/botState').set({ lastBackup: key }, { merge: true });
+    await sendBackup(key);
+  } catch (e) { console.error('backup', e.message); }
 }, 60e3);
 
 // Inventarizatsiya: har oyning belgilangan kunida (Sozlama: meta/settings.invDay, 0 = o'chiq) soat 10:00 da eslatma.
