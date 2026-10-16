@@ -200,9 +200,47 @@ setInterval(async () => {
   } catch (e) { console.error('daily', e.message); }
 }, 60e3);
 
+// Mijozlarga ommaviy xabar: kassadagi «Aksiya va mijozlar» bo'limidan navbatga qo'yiladi.
+let bcBusy = false;
+async function runBroadcasts() {
+  if (bcBusy) return; bcBusy = true;
+  try {
+    const snap = await db.collection('broadcasts').where('status', '==', 'new').get();
+    for (const doc of snap.docs) {
+      const b = doc.data(); await doc.ref.update({ status: 'sending', started: Date.now() });
+      let list = (await db.collection('clients').get()).docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.tgId && !c.archived);
+      if (Array.isArray(b.ids)) { const set = new Set(b.ids); list = list.filter(c => set.has(c.id)); }
+      let sent = 0, failed = 0;
+      for (const c of list) {
+        const r = await tg('sendMessage', { chat_id: c.tgId, text: String(b.text || ''), reply_markup: mainKb }).catch(() => ({ ok: false }));
+        r && r.ok ? sent++ : failed++;
+        await new Promise(x => setTimeout(x, 60));
+      }
+      await doc.ref.update({ status: 'done', sent, failed, finished: Date.now() });
+      await notifyAdmins(`📣 Xabar yuborildi: <b>${sent}</b> ta mijozga${failed ? ` (${failed} ta yetmadi — botni bloklagan bo'lishi mumkin)` : ''}.`);
+    }
+  } catch (e) { console.error('broadcast', e.message); } finally { bcBusy = false; }
+}
+db.collection('broadcasts').where('status', '==', 'new').onSnapshot(() => runBroadcasts(), e => console.error('broadcast listener', e.message));
+
+// Tug'ilgan kun: har kuni 10:00 da mijozga tabrik (kassadagi tug'ilgan kun chegirmasi yoqilgan bo'lsa, foizi bilan).
+setInterval(async () => {
+  try {
+    const t = new Date(Date.now() + 5 * 3600e3); if (t.getUTCHours() < 10) return;
+    const key = t.toISOString().slice(0, 10); const bs = await db.doc('meta/botState').get();
+    if (bs.exists && bs.data().lastBday === key) return;
+    await db.doc('meta/botState').set({ lastBday: key }, { merge: true });
+    const st = await settings(); const pct = Number(st.bdayPct) || 0, rng = st.bdayRange == null ? 3 : Number(st.bdayRange) || 0;
+    const md = key.slice(5); const shop = st.shopName || 'Eco Aroma';
+    const list = (await db.collection('clients').get()).docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.bday && String(c.bday).slice(5) === md && !c.archived);
+    for (const c of list) if (c.tgId) await tg('sendMessage', { chat_id: c.tgId, parse_mode: 'HTML', reply_markup: mainKb, text: `🎂 <b>${esc(c.name || '')}, tug'ilgan kuningiz bilan!</b>\n\n${esc(shop)} jamoasi sizga sog'lik, baxt va go'zallik tilaydi 🌸${pct ? `\n\n🎁 Sizga sovg'a: <b>${pct}% chegirma</b>${rng ? ` (${rng} kun ichida)` : ''}. Do'konga kelganingizda kassada o'zi hisoblanadi.` : ''}` });
+    if (list.length) await notifyAdmins(`🎂 Bugun tug'ilgan kun: ${list.map(c => `${esc(c.name)}${c.phone ? ' · ' + esc(c.phone) : ''}`).join(', ')}`);
+  } catch (e) { console.error('bday', e.message); }
+}, 60e3);
+
 // Har kuni 22:00 da to'liq zaxira fayli rahbarga Telegramda yuboriladi (kassadagi «Zaxiradan tiklash» bilan tiklanadi).
 async function sendBackup(key) {
-  const cols = ['products', 'clients', 'suppliers', 'sales', 'payments', 'purchases', 'meta', 'returns', 'expenses', 'shifts', 'inventory', 'stockLog'];
+  const cols = ['products', 'clients', 'suppliers', 'sales', 'payments', 'purchases', 'meta', 'returns', 'expenses', 'shifts', 'inventory', 'stockLog', 'certs', 'certUses', 'broadcasts'];
   const docs = [];
   for (const c of cols) (await db.collection(c).get()).docs.forEach(d => { if (!(c === 'meta' && d.id === 'botState')) docs.push([c + '/' + d.id, d.data()]); });
   let buf = Buffer.from(JSON.stringify({ app: 'eco-aroma-kassa', v: 2, ts: Date.now(), docs })), name = `eco-kassa-zaxira-${key}.json`;
