@@ -800,6 +800,7 @@ document.addEventListener("keydown",n=>{
 var xCut=()=>Date.now()-nv*864e5;
 var xDay0=()=>{let d=new Date;d.setHours(0,0,0,0);return d.getTime()};
 function xRange(col,a,b){
+ a=a>0?Math.floor(a/36e5)*36e5:a;b=b!==1/0&&b>0?Math.ceil(b/36e5)*36e5:b;
  if(a>=xCut())return{list:(g[col]||[]).filter(r=>r.ts>=a&&r.ts<b),ready:!0};
  g._xr=g._xr||{};let k=col+"|"+a+"|"+b;
  if(g._xr[k])return g._xr[k];
@@ -1756,7 +1757,7 @@ function xImgSettings(){
  return`<div class="panel" style="margin-top:14px"><div class="panel-h"><h2>\u{1F5BC} Rasm sozlamalari</h2><span class="spacer"></span><button class="btn sm primary" data-x="admodal">\u{1F3A8} Reklama rasmi yaratish</button></div><div class="panel-b" style="display:grid;gap:10px">
   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="aiAuto" ${xImgAuto()?"checked":""}> Tovar rasmi yuklanganda fonini avtomatik tozalash va o'rtaga joylash</label>
   <div><div class="l" style="margin-bottom:6px">Rasm foni</div><div class="chips">${[["#ffffff","Oq"],["#f3f4f6","Och kulrang"],["#fbf6ee","Krem"],["#eef6f1","Och yashil"],["#fdeef3","Och pushti"]].map(([c,t])=>`<button type="button" data-aibg="${c}" aria-pressed="${bg===c}"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #ccc;background:${c};vertical-align:-2px"></span> ${t}</button>`).join("")}</div></div>
-  <label class="l" for="aiKey">Google Gemini API kaliti (AI rasm uchun)<span class="inrow"><input id="aiKey" class="f" type="password" autocomplete="off" placeholder="${st.aiKey?"•••• saqlangan":"AIza…"}"><button type="button" class="btn sm" data-x="aikeysave">Saqlash va tekshirish</button></span></label>
+  <label class="l" for="aiKey">Google Gemini API kaliti (AI yordamchi va AI rasm uchun)<span class="inrow"><input id="aiKey" class="f" type="password" autocomplete="off" placeholder="${st.aiKey?"•••• saqlangan":"AIza…"}"><button type="button" class="btn sm" data-x="aikeysave">Saqlash va tekshirish</button></span></label>
   <div id="aiKeyMsg" class="muted" style="font-size:13px">${st.aiKey?"Kalit saqlangan"+(st.aiModel?" \xB7 model: "+V(st.aiModel):""):'Kalitni <b>aistudio.google.com</b> saytidan olasiz (Get API key). Rasm yaratish pullik: Google\'da to\'lov (billing) yoqilgan bo\'lishi kerak.'}</div>
   ${n?`<div class="note">${n} ta tovarning rasmi hali tozalanmagan. <button type="button" class="btn sm" data-x="aibatch">✨ Hammasini tozalash</button> <span id="aiBatchMsg"></span></div>`:""}
  </div></div>`
@@ -1795,7 +1796,9 @@ document.addEventListener("click",async n=>{
   let v=((q("#aiKey")||{}).value||"").trim(),m=q("#aiKeyMsg");if(!v&&!(g.settings||{}).aiKey){J("Kalitni kiriting");return}
   let key=v||g.settings.aiKey;m&&(m.textContent="⏳ Tekshirilmoqda…");
   try{g._gemModel=null;let mdl=await xGemModel(key,!0);await Ze("meta","settings",{aiKey:key,aiModel:mdl});g.settings.aiKey=key;g.settings.aiModel=mdl;m&&(m.innerHTML=`✅ Kalit ishlayapti \xB7 model: <b>${V(mdl)}</b>`)}
-  catch(e){m&&(m.innerHTML=`<span style="color:var(--danger)">Kalit ishlamadi: ${V(e.message)}</span>`)}
+  catch(e){
+   if(/rasm yaratadigan model topilmadi/.test(e.message)){await Ze("meta","settings",{aiKey:key});g.settings.aiKey=key;g._gemTxt=null;m&&(m.innerHTML="✅ Kalit saqlandi. AI yordamchi ishlaydi. Rasm yaratish uchun Google'da to'lov (billing) yoqilishi kerak.");return}
+   m&&(m.innerHTML=`<span style="color:var(--danger)">Kalit ishlamadi: ${V(e.message)}</span>`)}
  }
 },!0);
 
