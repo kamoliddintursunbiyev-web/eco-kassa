@@ -31,6 +31,20 @@ const esc = s => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&g
 const B = { buys: '🧾 Xaridlarim', cb: '💰 Keshbekim', debt: '📒 Qarzim', contact: "☎️ Bog'lanish", report: '📊 Bugungi hisobot' };
 const mainKb = { keyboard: [[{ text: "🛍 Do'kon", web_app: { url: SHOP_URL } }], [{ text: B.buys }, { text: B.cb }], [{ text: B.debt }, { text: B.contact }]], resize_keyboard: true, is_persistent: true };
 const adminKb = { keyboard: [[{ text: B.report }], ...mainKb.keyboard], resize_keyboard: true, is_persistent: true };
+const BDAY_SKIP = "⏭ O'tkazib yuborish";
+const bdayKb = { keyboard: [[{ text: BDAY_SKIP }]], resize_keyboard: true, one_time_keyboard: true };
+const regDoneText = (phone) => `✅ Ro'yxatdan o'tdingiz!\n\nEndi xaridlaringiz, keshbek va qarzingizni shu yerda ko'rasiz. Do'kondan xarid qilganda kassirga shu raqamni ayting: <b>${esc(phone)}</b>`;
+function askBday(chat) { return send(chat, "🎂 <b>Tug'ilgan kuningizni</b> yozing — o'sha kuni sizni tabriklab, sovg'a tayyorlaymiz!\n\nMasalan: <b>15.03.1995</b>", bdayKb); }
+function parseBday(t) {
+  const m = String(t || '').trim().match(/^(\d{1,2})[.\/\-\s](\d{1,2})[.\/\-\s](\d{2}|\d{4})$/);
+  if (!m) return null;
+  let d = +m[1], mo = +m[2], y = +m[3];
+  if (y < 100) y += y > (new Date().getFullYear() % 100) ? 1900 : 2000;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  if (y < 1920 || y > new Date().getFullYear() - 3) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
 const phoneKb = { keyboard: [[{ text: '📱 Telefon raqamni yuborish', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true };
 
 async function settings() { const s = await db.doc('meta/settings').get(); return s.exists ? s.data() : {}; }
@@ -134,14 +148,33 @@ async function onMessage(m) {
       await ref.set({ name: u.name, phone, discount: 0, note: 'Telegram orqali', debt: 0, cashback: 0, created: Date.now(), tgId: from.id, tgUser: from.username || '' });
       doc = await ref.get();
     }
-    await db.doc(`tgUsers/${from.id}`).set({ step: 'done', clientId: doc.id, phone, regTs: Date.now() }, { merge: true });
-    return send(chat, `✅ Ro'yxatdan o'tdingiz!\n\nEndi xaridlaringiz, keshbek va qarzingizni shu yerda ko'rasiz. Do'kondan xarid qilganda kassirga shu raqamni ayting: <b>${esc(phone)}</b>`, mainKb);
+    if (doc.data().bday) {
+      await db.doc(`tgUsers/${from.id}`).set({ step: 'done', clientId: doc.id, phone, regTs: Date.now() }, { merge: true });
+      return send(chat, regDoneText(phone), mainKb);
+    }
+    await db.doc(`tgUsers/${from.id}`).set({ step: 'bday', clientId: doc.id, phone, regTs: Date.now() }, { merge: true });
+    return askBday(chat);
+  }
+
+  if (u.step === 'bday') {
+    const done = async (msg) => { await db.doc(`tgUsers/${from.id}`).set({ step: 'done', bdayAsked: true }, { merge: true }); return send(chat, msg, (await isAdmin(from.id)) ? adminKb : mainKb); };
+    if (text === BDAY_SKIP) return done(u.phone ? regDoneText(u.phone) : 'Mayli 👌 Quyidagi tugmalardan foydalaning.');
+    const bd = parseBday(text);
+    if (!bd) return send(chat, "Sanani tushunmadim 🙏 Iltimos, shu ko'rinishda yozing: <b>15.03.1995</b> (kun.oy.yil)", bdayKb);
+    if (u.clientId) await db.doc(`clients/${u.clientId}`).update({ bday: bd });
+    const [y, mo, d] = bd.split('-');
+    return done(`🎂 Rahmat! Tug'ilgan kuningiz saqlandi: <b>${d}.${mo}.${y}</b>\nO'sha kuni sizni albatta tabriklaymiz 🎁` + (u.phone && !u.bdayAsked ? `\n\n` + regDoneText(u.phone) : ''));
   }
 
   const amAdmin = await isAdmin(from.id);
   const kb = amAdmin ? adminKb : mainKb;
   const cl = await clientOf(u);
   if (!cl) { await db.doc(`tgUsers/${from.id}`).set({ step: 'name' }, { merge: true }); return askName(chat, from); }
+  // Oldin ro'yxatdan o'tgan, lekin tug'ilgan kuni yo'q mijozdan bir marta so'raymiz
+  if (!cl.bday && !u.bdayAsked && !amAdmin) {
+    await db.doc(`tgUsers/${from.id}`).set({ step: 'bday', bdayAsked: true }, { merge: true });
+    return askBday(chat);
+  }
 
   if (text === B.buys) {
     const snap = await db.collection('sales').where('clientId', '==', cl.id).get();
