@@ -200,6 +200,33 @@ setInterval(async () => {
   } catch (e) { console.error('daily', e.message); }
 }, 60e3);
 
+// Kassaga kirgan xodimni server tasdiqlaydi (Firebase qoidalari shu yozuvga qarab ruxsat beradi).
+const PERM_DEF = { addProd: 0, editProd: 0, seeCost: 0, editStock: 0, labels: 1, intake: 0, inv: 1, suppliers: 0, price: -1, debt: 1, ret: 1, shift: 1, exp: 1, clients: 1, report: 1 };
+function effPerms(staff, st) {
+  const p = {}; for (const [k, d] of Object.entries(PERM_DEF)) p[k] = staff.role === 'owner' ? true : (staff.perms && k in staff.perms ? !!staff.perms[k] : d === -1 ? !!st.sellerPrice : !!d);
+  return p;
+}
+function sessFor(staff, st) { return { staffId: staff.id, name: staff.name || '', role: staff.role === 'owner' ? 'owner' : 'seller', perms: effPerms(staff, st), ts: Date.now(), exp: Date.now() + 7 * 864e5 }; }
+async function handleSessReq(doc) {
+  const r = doc.data() || {}, uid = doc.id; const st = await settings();
+  const staff = (st.staff || []).find(x => x.id === r.staffId);
+  const ok = !!(staff && !staff.off && r.pw && checkCred(staff, String(r.pw)));
+  await db.doc(`sessions/${uid}`).set(ok ? sessFor(staff, st) : { role: 'none', perms: {}, staffId: null, ts: Date.now(), err: 'bad' });
+  await doc.ref.delete();
+}
+db.collection('sessReq').onSnapshot(snap => { for (const ch of snap.docChanges()) if (ch.type !== 'removed') handleSessReq(ch.doc).catch(e => console.error('sess', e.message)); }, e => console.error('sessReq listener', e.message));
+// Rahbar xodim ruxsatini o'zgartirsa yoki profilni yopsa, ochiq sessiyalar darhol yangilanadi.
+db.doc('meta/settings').onSnapshot(async d => {
+  try {
+    const st = d.exists ? d.data() : {}; const ss = await db.collection('sessions').get();
+    for (const x of ss.docs) {
+      const v = x.data(); if (!v.staffId) continue; const staff = (st.staff || []).find(y => y.id === v.staffId);
+      if (!staff || staff.off) await x.ref.set({ role: 'none', perms: {}, staffId: null, ts: Date.now() });
+      else { const n = { ...sessFor(staff, st), exp: v.exp, ts: v.ts }; if (JSON.stringify([n.role, n.perms]) !== JSON.stringify([v.role, v.perms])) await x.ref.set(n); }
+    }
+  } catch (e) { console.error('sess refresh', e.message); }
+}, e => console.error('settings listener', e.message));
+
 // Omborga kirim qilinganda rahbarga xabar: kim, kimdan, qancha.
 db.collection('purchases').where('ts', '>=', START).onSnapshot(async snap => {
   for (const ch of snap.docChanges()) {

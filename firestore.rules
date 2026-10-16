@@ -1,0 +1,188 @@
+rules_version = '2';
+// Eco Kassa — Firestore xavfsizlik qoidalari (2-bosqich: xodim ruxsatlari bazada ham tekshiriladi).
+// Kim kirganini Telegram bot (server) tasdiqlaydi va /sessions/{qurilma} yozuviga yozadi.
+// Sotish hamma ulangan qurilmalar uchun doim ochiq — bot ishlamasa ham savdo to'xtamaydi.
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // ---------- Yordamchi funksiyalar ----------
+    function isDevice() {
+      return request.auth != null
+        && exists(/databases/$(db)/documents/devices/$(request.auth.uid));
+    }
+    function hasSess() {
+      return request.auth != null
+        && exists(/databases/$(db)/documents/sessions/$(request.auth.uid));
+    }
+    function sess() {
+      return get(/databases/$(db)/documents/sessions/$(request.auth.uid)).data;
+    }
+    function liveSess() {
+      return hasSess() && sess().get('exp', 0) > request.time.toMillis();
+    }
+    function isOwner() {
+      return isDevice() && liveSess() && sess().get('role', 'none') == 'owner';
+    }
+    function can(p) {
+      return isOwner()
+        || (isDevice() && liveSess() && sess().get('role', 'none') == 'seller'
+            && sess().get('perms', {}).get(p, false) == true);
+    }
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function onlyChanged(keys) {
+      return changed().hasOnly(keys);
+    }
+
+    // ---------- O'zgarmagan bloklar (oldingi qoidalardan) ----------
+    // Rahbar parolining xeshi: hech kim o'qiy olmaydi.
+    match /secret/{d} {
+      allow read: if false;
+      allow create: if request.auth != null && d == 'owner'
+        && !exists(/databases/$(db)/documents/secret/owner);
+      allow update: if d == 'owner' && (isDevice()
+        || (request.auth != null && resource.data.reset == true && !('reset' in request.resource.data)));
+      allow delete: if false;
+    }
+    // Qurilma faqat rahbar paroli bilan ulanadi.
+    match /devices/{uid} {
+      allow read: if false;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.pinHash == get(/databases/$(db)/documents/secret/owner).data.pinHash;
+      allow update, delete: if false;
+    }
+    // Telegram do'kon katalogi: hamma o'qiydi, kassa qurilmalari yangilaydi.
+    match /catalog/{id} {
+      allow read: if true;
+      allow create, update: if isDevice();
+      allow delete: if false;
+    }
+    // Telegram buyurtmalar: mijoz faqat yangi buyurtma qo'shadi; kassa holatini o'zgartiradi.
+    match /orders/{id} {
+      allow read, update: if isDevice();
+      allow create: if isDevice() || (request.auth != null
+        && request.resource.data.keys().hasOnly(['ts','status','src','name','phone','delivery','address','comment','items','total','tgId','tgUser'])
+        && request.resource.data.status == 'new'
+        && request.resource.data.name is string && request.resource.data.name.size() <= 80
+        && request.resource.data.phone is string && request.resource.data.phone.size() <= 30
+        && request.resource.data.address is string && request.resource.data.address.size() <= 200
+        && request.resource.data.comment is string && request.resource.data.comment.size() <= 300
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 50);
+      allow delete: if false;
+    }
+
+    // ---------- Sessiya (kim kirgani) ----------
+    // Qurilma o'z sessiyasini faqat "none" ga tushira oladi (chiqish). Ko'tarishni faqat bot qiladi.
+    match /sessions/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.role == 'none';
+      allow delete: if false;
+    }
+    // Kirish so'rovi: faqat bot o'qiydi.
+    match /sessReq/{uid} {
+      allow read: if false;
+      allow create, update: if isDevice() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['staffId','pw','ts']);
+      allow delete: if false;
+    }
+
+    // ---------- Sozlamalar ----------
+    match /meta/{d} {
+      allow read: if isDevice();
+      allow create: if isDevice();
+      allow update: if isOwner();
+      allow delete: if false;
+    }
+
+    // ---------- Tovarlar ----------
+    match /products/{id} {
+      allow read: if isDevice();
+      allow create: if isDevice() && can('addProd')
+        && (request.resource.data.get('qty', 0) == 0 || can('editStock'));
+      allow update: if isDevice() && (
+        // sotuv: faqat qoldiq kamayadi
+        (onlyChanged(['qty']) && request.resource.data.qty <= resource.data.qty)
+        // qaytarish: qoldiq ko'payadi
+        || (onlyChanged(['qty']) && can('ret'))
+        // kirim: qoldiq, tannarx, yetkazib beruvchi, muddat
+        || (onlyChanged(['qty','cost','sup','expiries']) && can('intake'))
+        // tahrirlash: qoldiqqa tegmasa editProd, tegsa editStock ham kerak
+        || (can('editProd') && (!changed().hasAny(['qty']) || can('editStock')))
+        || can('editStock')
+      );
+      allow delete: if false;
+    }
+
+    // ---------- Savdo ----------
+    match /sales/{id} {
+      allow read, create: if isDevice();
+      allow update: if can('ret') && onlyChanged(['ret','retSum','retFull']);
+      allow delete: if false;
+    }
+    match /returns/{id} {
+      allow read: if isDevice();
+      allow create: if can('ret');
+      allow update, delete: if false;
+    }
+
+    // ---------- Ombor ----------
+    match /purchases/{id} {
+      allow read: if isDevice();
+      allow create: if can('intake');
+      allow update, delete: if false;
+    }
+    match /suppliers/{id} {
+      allow read: if isDevice();
+      allow create, update: if can('intake') || can('suppliers');
+      allow delete: if false;
+    }
+    match /inventory/{id} {
+      allow read: if isDevice();
+      allow create: if isOwner();
+      allow update: if isOwner() || (can('inv') && onlyChanged(['counts']));
+      allow delete: if false;
+    }
+
+    // ---------- Kassa ----------
+    match /expenses/{id} {
+      allow read: if isDevice();
+      allow create: if can('exp');
+      allow update: if isOwner();
+      allow delete: if false;
+    }
+    match /shifts/{id} {
+      allow read: if isDevice();
+      allow create: if can('shift');
+      allow update, delete: if false;
+    }
+
+    // ---------- Marketing ----------
+    match /certs/{id} {
+      allow read: if isDevice();
+      allow create: if isOwner();
+      allow update: if isOwner()
+        || (isDevice() && onlyChanged(['balance','lastUse']) && request.resource.data.balance <= resource.data.balance);
+      allow delete: if false;
+    }
+    match /broadcasts/{id} {
+      allow read: if isDevice();
+      allow create: if isOwner();
+      allow update, delete: if false;
+    }
+    match /imgBackup/{id} {
+      allow read, create, update: if isOwner();
+      allow delete: if false;
+    }
+
+    // ---------- Qolgan to'plamlar (mijozlar, to'lovlar, qoldiq tarixi va h.k.) ----------
+    match /{col}/{id} {
+      allow read, create, update: if isDevice() && !(col in [
+        'secret','devices','catalog','orders','sessions','sessReq','meta','products','sales','returns',
+        'purchases','suppliers','inventory','expenses','shifts','certs','broadcasts','imgBackup','tgUsers']);
+      allow delete: if false;
+    }
+  }
+}
