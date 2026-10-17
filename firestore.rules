@@ -34,6 +34,39 @@ service cloud.firestore {
     function onlyChanged(keys) {
       return changed().hasOnly(keys);
     }
+    // Qarz kamayishi / keshbek ko'payishi uchun "dalil" hujjat (to'lov, qaytarish yoki chek).
+    // Mijoz yozuvida lastRefCol, lastRefId, lastRefTs bo'ladi — ular shu hujjatni ko'rsatadi.
+    function nd() { return request.resource.data; }
+    function refFresh() {
+      return nd().get('lastRefTs', 0) is number
+        && nd().get('lastRefId', '') is string && nd().get('lastRefId', '') != ''
+        && nd().lastRefId != resource.data.get('lastRefId', '')
+        && nd().lastRefTs >= resource.data.get('lastRefTs', 0) - 600000;
+    }
+    function refDoc(col) {
+      return get(/databases/$(db)/documents/$(col)/$(nd().lastRefId)).data;
+    }
+    function debtDownOk(cid, amt) {
+      return refFresh() && (
+        (nd().get('lastRefCol', '') == 'payments'
+          && refDoc('payments').get('refId', '') == cid
+          && refDoc('payments').get('kind', '') == 'client'
+          && refDoc('payments').get('amount', 0) >= amt)
+        || (nd().get('lastRefCol', '') == 'returns'
+          && refDoc('returns').get('clientId', '') == cid
+          && refDoc('returns').get('debtOff', 0) >= amt));
+    }
+    function cbUpOk(cid, amt) {
+      return refFresh() && nd().get('lastRefCol', '') == 'sales'
+        && refDoc('sales').get('clientId', '') == cid
+        && refDoc('sales').get('cbEarned', 0) >= amt;
+    }
+    function clientMoneyOk(cid) {
+      return (nd().get('debt', 0) >= resource.data.get('debt', 0)
+              || debtDownOk(cid, resource.data.get('debt', 0) - nd().get('debt', 0)))
+        && (nd().get('cashback', 0) <= resource.data.get('cashback', 0)
+              || cbUpOk(cid, nd().get('cashback', 0) - resource.data.get('cashback', 0)));
+    }
 
     // ---------- O'zgarmagan bloklar (oldingi qoidalardan) ----------
     // Rahbar parolining xeshi: hech kim o'qiy olmaydi.
@@ -41,8 +74,9 @@ service cloud.firestore {
       allow read: if false;
       allow create: if request.auth != null && d == 'owner'
         && !exists(/databases/$(db)/documents/secret/owner);
-      allow update: if d == 'owner' && (isDevice()
-        || (request.auth != null && resource.data.reset == true && !('reset' in request.resource.data)));
+      // Qurilma ulash parolini faqat rahbar almashtiradi.
+      allow update: if d == 'owner' && (isOwner()
+        || (request.auth != null && resource.data.get('reset', false) == true && !('reset' in request.resource.data)));
       allow delete: if false;
     }
     // Qurilma faqat rahbar paroli bilan ulanadi.
@@ -62,8 +96,12 @@ service cloud.firestore {
     match /orders/{id} {
       allow read, update: if isDevice();
       allow create: if isDevice() || (request.auth != null
-        && request.resource.data.keys().hasOnly(['ts','status','src','name','phone','delivery','address','comment','items','total','tgId','tgUser'])
+        && request.resource.data.keys().hasOnly(['ts','status','src','name','phone','delivery','address','comment','items','total','tgId','tgUser','initData'])
         && request.resource.data.status == 'new'
+        && request.resource.data.ts is number
+        && request.resource.data.total is number && request.resource.data.total >= 0 && request.resource.data.total < 1000000000
+        && request.resource.data.delivery in ['delivery', 'pickup']
+        && request.resource.data.get('initData', '') is string && request.resource.data.get('initData', '').size() <= 4096
         && request.resource.data.name is string && request.resource.data.name.size() <= 80
         && request.resource.data.phone is string && request.resource.data.phone.size() <= 30
         && request.resource.data.address is string && request.resource.data.address.size() <= 200
@@ -92,7 +130,8 @@ service cloud.firestore {
     // ---------- Sozlamalar ----------
     match /meta/{d} {
       allow read: if isDevice();
-      allow create: if isDevice();
+      // Faqat birinchi sozlashda "settings" yaratiladi; boshqa meta yozuvlarini bot yozadi.
+      allow create: if isDevice() && d == 'settings';
       allow update: if isOwner();
       allow delete: if false;
     }
@@ -118,7 +157,9 @@ service cloud.firestore {
 
     // ---------- Savdo ----------
     match /sales/{id} {
-      allow read, create: if isDevice();
+      allow read: if isDevice();
+      allow create: if isDevice()
+        && request.resource.data.get('cbEarned', 0) <= request.resource.data.get('total', 0);
       allow update: if can('ret') && onlyChanged(['ret','retSum','retFull']);
       allow delete: if false;
     }
@@ -177,11 +218,50 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ---------- Qolgan to'plamlar (mijozlar, to'lovlar, qoldiq tarixi va h.k.) ----------
+    // ---------- Mijozlar ----------
+    // Qarzni kamaytirish faqat to'lov yoki qaytarish yozuvi bilan, keshbekni oshirish faqat chek bilan.
+    // Ism, telefon, chegirma kabi ma'lumotlarni "Mijozlar" ruxsati bor xodim o'zgartiradi.
+    match /clients/{id} {
+      allow read: if isDevice();
+      allow create: if isDevice() && (isOwner()
+        || (request.resource.data.get('debt', 0) == 0 && request.resource.data.get('cashback', 0) == 0));
+      allow update: if isDevice() && (isOwner() || (
+        (!changed().hasAny(['name','phone','discount','note','bday','archived','created']) || can('clients'))
+        && clientMoneyOk(id)));
+      allow delete: if false;
+    }
+    // To'lovlar: faqat qo'shiladi, o'zgartirilmaydi.
+    match /payments/{id} {
+      allow read: if isDevice();
+      allow create: if isDevice()
+        && request.resource.data.get('kind', '') in ['client', 'supplier']
+        && request.resource.data.get('amount', 0) is number && request.resource.data.get('amount', 0) > 0;
+      allow update: if isOwner();
+      allow delete: if false;
+    }
+    // Qoldiq o'zgarishlari tarixi va sertifikat ishlatilishi: faqat qo'shiladi, hech kim o'zgartira olmaydi.
+    match /stockLog/{id} {
+      allow read, create: if isDevice();
+      allow update, delete: if false;
+    }
+    match /certUses/{id} {
+      allow read, create: if isDevice();
+      allow update, delete: if false;
+    }
+    // Rahbarga tegishli maxfiy sozlamalar (AI kaliti).
+    match /private/{d} {
+      allow read: if isOwner() || can('addProd') || can('editProd');
+      allow write: if isOwner();
+    }
+
+    // ---------- Qolgan to'plamlar ----------
+    // Yangi, nomi yuqorida yozilmagan to'plamlarga faqat rahbar yoza oladi.
     match /{col}/{id} {
-      allow read, create, update: if isDevice() && !(col in [
+      allow read: if isDevice() && !(col in ['secret','devices','sessions','sessReq','tgUsers','private','imgBackup']);
+      allow create, update: if isOwner() && !(col in [
         'secret','devices','catalog','orders','sessions','sessReq','meta','products','sales','returns',
-        'purchases','suppliers','inventory','expenses','shifts','certs','broadcasts','imgBackup','tgUsers']);
+        'purchases','suppliers','inventory','expenses','shifts','certs','broadcasts','imgBackup','tgUsers',
+        'clients','payments','stockLog','certUses','private']);
       allow delete: if false;
     }
   }
