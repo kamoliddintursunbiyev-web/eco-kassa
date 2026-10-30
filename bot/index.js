@@ -569,6 +569,38 @@ db.collection('inventory').where('status', '==', 'done').onSnapshot(async snap =
   }
 }, e => console.error('inventory listener', e.message));
 
+// Kassa yopilganda rahbarga qisqa hisobot; pul kam yoki ortiqcha chiqsa — alohida ogohlantirish.
+db.collection('shifts').where('ts', '>=', SINCE_EVENTS).onSnapshot(async snap => {
+  for (const ch of snap.docChanges()) {
+    if (ch.type !== 'added') continue; const x = ch.doc.data(); if (x.notified) continue;
+    await ch.doc.ref.update({ notified: true }).catch(() => {});
+    const d = Number(x.diff) || 0;
+    const head = d === 0 ? '✅ <b>Kassa yopildi — hammasi joyida</b>' : d < 0 ? `🔴 <b>Kassa yopildi — ${money(-d)} so'm KAM</b>` : `🟡 <b>Kassa yopildi — ${money(d)} so'm ortiqcha</b>`;
+    await notifyAdmins(`${head}\n${LINE}\n👤 Yopdi: <b>${esc(x.seller || '—')}</b> · ${fmt(x.ts)}\n🧾 Cheklar: ${x.nSales || 0} · naqd savdo ${money(x.cashSales)} · karta ${money(x.cardSales)}\n💵 Bo'lishi kerak: <b>${money(x.expected)}</b> · sanaldi: <b>${money(x.counted)}</b>\n📤 Olib ketildi: ${money(x.taken)} · ertaga uchun qoldi: ${money(x.left)}${x.note ? `\n📝 ${esc(x.note)}` : ''}`);
+  }
+}, e => console.error('shifts listener', e.message));
+
+// Tovar kam qolganda yoki tugaganda rahbarga xabar (bir necha tovar bo'lsa — bitta xabarda).
+const stockSeen = new Map(); let stockReady = false; const stockQueue = new Map();
+db.collection('products').onSnapshot(snap => {
+  for (const ch of snap.docChanges()) {
+    const p = ch.doc.data(), id = ch.doc.id, q = Number(p.qty) || 0, min = p.min == null ? 3 : Number(p.min) || 0, prev = stockSeen.get(id);
+    stockSeen.set(id, q);
+    if (!stockReady || ch.type !== 'modified' || p.archived || prev == null || q >= prev) continue;
+    if (prev > 0 && q <= 0) stockQueue.set(id, { name: p.name, q, min, out: true });
+    else if (prev > min && q <= min) stockQueue.set(id, { name: p.name, q, min, out: false });
+  }
+  stockReady = true;
+}, e => console.error('products listener', e.message));
+setInterval(async () => {
+  if (!stockQueue.size) return;
+  const L = [...stockQueue.values()]; stockQueue.clear();
+  const out = L.filter(x => x.out), low = L.filter(x => !x.out);
+  try {
+    await notifyAdmins(`📦 <b>Ombor ogohlantirishi</b>\n${LINE}${out.length ? `\n🔴 <b>Tugadi:</b>\n${out.map(x => `   • ${esc(x.name)}`).join('\n')}` : ''}${low.length ? `\n🟡 <b>Kam qoldi:</b>\n${low.map(x => `   • ${esc(x.name)} — ${x.q} dona (chegara ${x.min})`).join('\n')}` : ''}\n\nKassada «Buyurtma ro'yxati» tugmasi yetkazib beruvchiga yuborish uchun ro'yxat tuzib beradi.`);
+  } catch (e) { console.error('stock notify', e.message); }
+}, 180e3);
+
 async function setupMenus() {
   await tg('setMyCommands', { commands: [{ command: 'start', description: 'Bosh menyu' }, { command: 'aksiya', description: 'Hozirgi aksiyalar' }] });
   await tg('setChatMenuButton', { menu_button: { type: 'web_app', text: "🛍 Do'kon", web_app: { url: SHOP_URL } } });
