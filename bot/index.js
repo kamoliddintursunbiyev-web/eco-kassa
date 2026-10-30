@@ -206,7 +206,7 @@ async function onMessage(m) {
 
   // ----- Rahbar bo'lib ulanish -----
   if (text === '/rahbar') {
-    if (await isAdmin(from.id)) return send(chat, '✅ Siz allaqachon rahbar sifatida ulangansiz.\n\nBuyruqlar:\n/hisobot · /hafta · /ombor · /qarzdorlar\n/rahbarlar — ulangan rahbarlar\n/zaxira — to\'liq zaxira fayli\n/chiqish — rahbar rejimidan chiqish', adminKb);
+    if (await isAdmin(from.id)) return send(chat, '✅ Siz allaqachon rahbar sifatida ulangansiz.\n\nBuyruqlar:\n/hisobot · /hafta · /ombor · /qarzdorlar\n/oylik — shu oy · /oylik_otgan — o\'tgan oy\n/rahbarlar — ulangan rahbarlar\n/zaxira — to\'liq zaxira fayli\n/chiqish — rahbar rejimidan chiqish', adminKb);
     await db.doc(`tgUsers/${from.id}`).set({ adminStep: 'login' }, { merge: true });
     return send(chat, "🔐 Kassadagi <b>rahbar loginini</b> yozing:");
   }
@@ -239,6 +239,8 @@ async function onMessage(m) {
     if (text === B.week || text === '/hafta') return send(chat, await weekReport(), adminKb);
     if (text === B.stock || text === '/ombor') return send(chat, await stockReport(), adminKb);
     if (text === B.debtors || text === '/qarzdorlar') return send(chat, await debtorsReport(), adminKb);
+    if (text === '/oylik') { const t = new Date(Date.now() + 5 * 3600e3); return send(chat, await monthlyReport(t.getUTCFullYear(), t.getUTCMonth()), adminKb); }
+    if (text === '/oylik_otgan') { const t = new Date(Date.now() + 5 * 3600e3); let y = t.getUTCFullYear(), m = t.getUTCMonth() - 1; if (m < 0) { m = 11; y--; } return send(chat, await monthlyReport(y, m), adminKb); }
     if (text === '/zaxira') { await send(chat, '⏳ Zaxira tayyorlanmoqda…', adminKb); await sendBackup(new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10), true, [from.id]); return; }
     if (text === '/chiqish') { await removeAdmin(from.id); return send(chat, '👋 Rahbar rejimidan chiqdingiz. Hisobot va xabarlar endi kelmaydi.', mainKb); }
     if (text === '/rahbarlar') {
@@ -600,6 +602,89 @@ setInterval(async () => {
     await notifyAdmins(`📦 <b>Ombor ogohlantirishi</b>\n${LINE}${out.length ? `\n🔴 <b>Tugadi:</b>\n${out.map(x => `   • ${esc(x.name)}`).join('\n')}` : ''}${low.length ? `\n🟡 <b>Kam qoldi:</b>\n${low.map(x => `   • ${esc(x.name)} — ${x.q} dona (chegara ${x.min})`).join('\n')}` : ''}\n\nKassada «Buyurtma ro'yxati» tugmasi yetkazib beruvchiga yuborish uchun ro'yxat tuzib beradi.`);
   } catch (e) { console.error('stock notify', e.message); }
 }, 180e3);
+
+// ---------- Avtomatik mijoz xabarlari (kassadagi «Aksiya va mijozlar» → «Avtomatik xabarlar») ----------
+// Har kuni 11:00 dan keyin bir marta: «mahsulotingiz tugayapti» va «sizni sog'indik». Chegirma mijoz yozuviga
+// offer sifatida yoziladi; kassa uni mijoz tanlanganda o'zi qo'llaydi va ishlatilgach o'chiradi.
+setInterval(async () => {
+  try {
+    const t = new Date(Date.now() + 5 * 3600e3); if (t.getUTCHours() < 11) return;
+    const st = await settings(); const rf = st.refill || {}, wb = st.winback || {};
+    if (!rf.on && !wb.on) return;
+    const key = t.toISOString().slice(0, 10); const bs = await db.doc('meta/botState').get();
+    if (bs.exists && bs.data().lastAutoMsg === key) return;
+    await db.doc('meta/botState').set({ lastAutoMsg: key }, { merge: true });
+    const shop = st.shopName || 'Eco Aroma', now = Date.now(), D = 864e5;
+    const cls = (await db.collection('clients').get()).docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() })).filter(c => c.tgId && !c.archived);
+    const byId = new Map(cls.map(c => [c.id, c])), done = new Set(); let nR = 0, nW = 0;
+    const busy = c => done.has(c.id) || (c.offer && Number(c.offer.until) > now);
+    const offerTxt = (pct, valid) => pct ? `\n\n🎁 Siz uchun <b>${pct}% chegirma</b> — ${valid} kun amal qiladi. Kassada o'zi hisoblanadi.` : '';
+    const give = async (c, kind, pct, valid, text) => {
+      const r = await send(c.tgId, text, mainKb).catch(e => ({ ok: false, description: e.message }));
+      if (r && r.ok === false) { console.error('auto msg', c.id, r.description); return false; }
+      if (pct) await c.ref.update({ offer: { pct, until: now + valid * D, kind, sent: now } });
+      done.add(c.id); await sleep(60); return true;
+    };
+    if (rf.on) {
+      const days = Math.max(7, Number(rf.days) || 30), pct = Math.min(50, Number(rf.pct) || 0), valid = Math.max(1, Number(rf.valid) || 7);
+      const sales = (await db.collection('sales').where('ts', '>=', dayStart(days)).where('ts', '<', dayStart(days - 1)).get()).docs.map(d => d.data());
+      for (const s of sales.sort((a, b) => b.ts - a.ts)) {
+        const c = byId.get(s.clientId); if (!c || busy(c) || Number(c.lastTs) > Number(s.ts) + 3600e3) continue;
+        const items = (s.items || []).map(i => i.name).filter(Boolean); if (!items.length) continue;
+        const what = items.slice(0, 3).join(', ') + (items.length > 3 ? ' va boshqalar' : '');
+        if (await give(c, 'refill', pct, valid, `🌿 <b>${esc(c.name || '')}, salom!</b>\n${days} kun oldin ${esc(shop)}dan <b>${esc(what)}</b> olgan edingiz. Tugab qolayotgan bo'lsa — vaqtida to'ldirib qo'ying 😊${offerTxt(pct, valid)}`)) nR++;
+      }
+    }
+    if (wb.on) {
+      const days = Math.max(7, Number(wb.days) || 45), pct = Math.min(50, Number(wb.pct) || 0), valid = Math.max(1, Number(wb.valid) || 7);
+      const a = dayStart(days), b = dayStart(days - 1);
+      for (const c of cls) {
+        const l = Number(c.lastTs) || 0; if (l < a || l >= b || busy(c)) continue;
+        if (await give(c, 'winback', pct, valid, `🌸 <b>${esc(c.name || '')}, sizni sog'indik!</b>\nAnchadan beri ${esc(shop)}ga kelmadingiz. Yangi mahsulotlar keldi 🌿${offerTxt(pct, valid)}`)) nW++;
+      }
+    }
+    if (nR || nW) await notifyAdmins(`🤖 <b>Avtomatik xabarlar yuborildi</b>\n${LINE}${nR ? `\n🧴 «Mahsulotingiz tugayapti»: <b>${nR}</b> ta mijoz` : ''}${nW ? `\n🌸 «Sizni sog'indik»: <b>${nW}</b> ta mijoz` : ''}`);
+  } catch (e) { console.error('auto msgs', e.message); }
+}, 60e3);
+
+// ---------- Oylik foyda-zarar hisoboti: har oyning 1-sanasida 09:30 dan keyin, o'tgan oy uchun ----------
+const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
+async function monthlyReport(y, m) {
+  const a = Date.UTC(y, m, 1) - 5 * 3600e3, b = Date.UTC(y, m + 1, 1) - 5 * 3600e3;
+  const q = async c => (await db.collection(c).where('ts', '>=', a).where('ts', '<', b).get()).docs.map(d => ({ id: d.id, ...d.data() }));
+  const live = L => { const rv = new Set(L.filter(x => x.rev).map(x => x.rev)); return L.filter(x => !x.rev && !x.void && !rv.has(x.id)); };
+  const sales = await q('sales'), rets = await q('returns'), exps = live(await q('expenses')), purch = live(await q('purchases'));
+  const pa = Date.UTC(y, m - 1, 1) - 5 * 3600e3, prev = (await db.collection('sales').where('ts', '>=', pa).where('ts', '<', a).get()).docs.map(d => d.data());
+  const tot = sum(sales, 'total'), cost = costOf(sales), rAmt = sum(rets, 'amount'), rCost = costOf(rets), eAmt = sum(exps, 'amount');
+  const gross = tot - rAmt - (cost - rCost), net = gross - eAmt, ptot = sum(prev, 'total'), pct = ptot ? Math.round((tot - ptot) / ptot * 100) : null;
+  const byP = {}; sales.forEach(s => (s.items || []).forEach(i => { const o = byP[i.name] = byP[i.name] || { q: 0, s: 0 }; o.q += Number(i.qty) || 0; o.s += (Number(i.qty) || 0) * (Number(i.price) || 0); }));
+  const top = Object.entries(byP).sort((x, y) => y[1].s - x[1].s).slice(0, 5);
+  const byC = {}; exps.forEach(x => { byC[x.cat || 'Boshqa'] = (byC[x.cat || 'Boshqa'] || 0) + (Number(x.amount) || 0); });
+  const byS = {}; sales.forEach(s => { byS[s.seller || '—'] = (byS[s.seller || '—'] || 0) + (Number(s.total) || 0); });
+  const days = new Set(sales.map(s => new Date(s.ts + 5 * 3600e3).toISOString().slice(0, 10))).size;
+  return [`📅 <b>Oylik hisobot · ${MONTHS[m]} ${y}</b>`, LINE,
+    `💵 Savdo: <b>${money(tot)} so'm</b>${pct === null ? '' : `  ${pct >= 0 ? '🟢 ▲' : '🔴 ▼'}${Math.abs(pct)}% o'tgan oyga`}`,
+    `🧾 Cheklar: <b>${sales.length}</b> · o'rtacha chek ${money(sales.length ? tot / sales.length : 0)} · savdo kunlari ${days}`,
+    rAmt ? `↩️ Qaytarildi: ${money(rAmt)} so'm` : '',
+    `📦 Tovar tannarxi: ${money(cost - rCost)} so'm`,
+    `📈 Yalpi foyda: <b>${money(gross)} so'm</b>`,
+    `🧾 Xarajatlar: ${money(eAmt)} so'm${Object.keys(byC).length ? '\n' + Object.entries(byC).sort((x, y) => y[1] - x[1]).slice(0, 6).map(([k, v]) => `   • ${esc(k)} — ${money(v)}`).join('\n') : ''}`,
+    `${net >= 0 ? '✅' : '🔴'} <b>Sof foyda: ${net < 0 ? '−' : ''}${money(Math.abs(net))} so'm</b>`,
+    `📥 Omborga kirim: ${purch.length} ta · ${money(sum(purch, 'total'))} so'm`,
+    top.length ? `\n🏆 <b>Eng ko'p sotilgan</b>\n${top.map(([k, o], i) => `${i + 1}. ${esc(k)} — ${o.q} dona · ${money(o.s)}`).join('\n')}` : '',
+    Object.keys(byS).length ? `\n👤 <b>Sotuvchilar</b>\n${Object.entries(byS).sort((x, y) => y[1] - x[1]).map(([k, v]) => `• ${esc(k)} — ${money(v)}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n');
+}
+setInterval(async () => {
+  try {
+    const t = new Date(Date.now() + 5 * 3600e3); if (t.getUTCDate() !== 1 || t.getUTCHours() * 60 + t.getUTCMinutes() < 570) return;
+    let y = t.getUTCFullYear(), m = t.getUTCMonth() - 1; if (m < 0) { m = 11; y--; }
+    const key = `${y}-${m + 1}`; const bs = await db.doc('meta/botState').get();
+    if (bs.exists && bs.data().lastMonthRep === key) return;
+    await db.doc('meta/botState').set({ lastMonthRep: key }, { merge: true });
+    await notifyAdmins(await monthlyReport(y, m));
+  } catch (e) { console.error('month report', e.message); }
+}, 60e3);
 
 async function setupMenus() {
   await tg('setMyCommands', { commands: [{ command: 'start', description: 'Bosh menyu' }, { command: 'aksiya', description: 'Hozirgi aksiyalar' }] });
