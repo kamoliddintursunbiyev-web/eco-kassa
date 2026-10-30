@@ -603,7 +603,7 @@ This typically indicates that your device does not have a healthy Internet conne
    ${ue()?`<div class="kpi warn"><div class="k">Mening qarzim (hozir)</div><div class="v num">${O(S)}</div></div>
    <div class="kpi"><div class="k">Ombordagi tovar qiymati</div><div class="v num">${O(x)}</div></div>`:""}
   </div>
-  ${xRepExtra(n,e)}
+  ${xRepExtra(n,e)}${xSellerPanel(i,n,e)}
   <div class="two">
    <div class="panel"><div class="panel-h"><h2>Sotuvchilar bo'yicha</h2></div><div class="panel-b" style="display:grid;gap:10px">
     ${Object.entries(c).map(([P,F])=>`<div><div style="display:flex;justify-content:space-between"><span>${V(P)}</span><b class="num">${O(F)}</b></div><div class="bar"><i style="width:${s?Math.round(F/s*100):0}%"></i></div></div>`).join("")||`<div class="muted">Bu davrda savdo yo'q</div>`}
@@ -1023,6 +1023,45 @@ document.addEventListener("click",async n=>{
  if(d.pydel){await xPayFixDo(d.pydel,!0,t);return}
 },!0);
 /* ===== /To'lovlarni tuzatish ===== */
+/* ===== Sotuvchilar hisoboti va bonus ===== */
+function xSellerPanel(sales,a,b){
+ let own=ue(),R=xRange("returns",a,b),Sh=xRange("shifts",a,b),bp=E((g.settings||{}).bonusPct),
+  bySale={};sales.forEach(s=>bySale[s.id]=s.seller||"—");
+ let M={},row=k=>M[k]=M[k]||{n:0,sum:0,disc:0,cost:0,ret:0,rn:0,diff:0,sh:0,items:0};
+ sales.forEach(s=>{let r=row(s.seller||"—");r.n++;r.sum+=E(s.total);r.disc+=E(s.discount);r.items+=(s.items||[]).reduce((t,i)=>t+E(i.qty),0);r.cost+=(s.items||[]).reduce((t,i)=>t+E(i.cost)*E(i.qty),0)});
+ (R.list||[]).forEach(x=>{let r=row(bySale[x.saleId]||x.seller||"—");r.ret+=E(x.amount);r.rn++});
+ xUq((Sh.list||[]).concat(g.shifts||[])).filter(x=>E(x.ts)>=a&&E(x.ts)<b).forEach(x=>{let r=row(x.seller||"—");r.diff+=E(x.diff);r.sh++});
+ let L=Object.entries(M).sort((x,y)=>(y[1].sum-y[1].ret)-(x[1].sum-x[1].ret));
+ if(!L.length)return"";
+ return`<div class="panel" style="margin:14px 0"><div class="panel-h"><h2>👤 Sotuvchilar natijasi</h2>${own?`<span class="spacer"></span><label style="display:flex;gap:6px;align-items:center;font-size:13px">Bonus (sof savdodan, %)<input id="bonusPct" class="f num" style="width:70px" inputmode="decimal" value="${bp||""}" placeholder="0"></label>`:""}</div>
+ <div class="tbl-wrap"><table class="t"><thead><tr><th>Sotuvchi</th><th class="r">Cheklar</th><th class="r">Savdo</th><th class="r">O'rtacha chek</th><th class="r">Dona</th><th class="r">Chegirma</th><th class="r">Qaytarildi</th><th class="r">Sof savdo</th>${own?'<th class="r">Foyda</th>':""}<th class="r" title="Kassa yopilganda sanalgan pul va kutilgan pul farqi">Kassa farqi</th>${bp?'<th class="r">Bonus</th>':""}</tr></thead><tbody>
+ ${L.map(([k,r])=>{let net=r.sum-r.ret;return`<tr><td><b>${V(k)}</b></td><td class="r num">${r.n}</td><td class="r num">${O(r.sum)}</td><td class="r num">${r.n?O(r.sum/r.n):"—"}</td><td class="r num">${O(r.items)}</td><td class="r num">${O(r.disc)}</td><td class="r num">${r.ret?`${O(r.ret)} <span class="muted">(${r.rn})</span>`:"—"}</td><td class="r num"><b>${O(net)}</b></td>${own?`<td class="r num">${O(r.sum-r.cost)}</td>`:""}<td class="r num">${r.sh?`<span class="pill ${r.diff<0?"out":r.diff>0?"low":"ok"}">${r.diff>0?"+":""}${xNeg(r.diff)}</span>`:"—"}</td>${bp?`<td class="r num"><b>${O(net*bp/100)}</b></td>`:""}</tr>`}).join("")}
+ </tbody></table></div>
+ ${R.ready&&Sh.ready?"":'<div class="muted" style="font-size:12px;padding:6px 12px">Qaytarish va kassa yopilishlari yuklanmoqda…</div>'}
+ <div class="muted" style="font-size:12px;padding:6px 12px">Sof savdo = savdo − qaytarilgan. Kassa farqi: minus — kassada pul kam chiqqan, plus — ortiqcha.${own?" Bonus foizini yozsangiz, har sotuvchining bonusi hisoblanadi.":""}</div></div>`
+}
+document.addEventListener("change",n=>{let t=n.target;if(t&&t.id==="bonusPct"&&ue()){let v=Math.max(0,Math.min(50,E(t.value)));Ze("meta","settings",{bonusPct:v});g.settings.bonusPct=v;J("Bonus foizi saqlandi");se()}});
+
+/* ===== Zaxira faylini tekshirish (tiklamasdan) ===== */
+async function xBackupCheck(file){
+ try{
+  let txt;
+  if(/\.gz$/i.test(file.name)){if(!window.DecompressionStream){J("Bu brauzer .gz faylni ocholmaydi");return}txt=await new Response(file.stream().pipeThrough(new DecompressionStream("gzip"))).text()}
+  else txt=await file.text();
+  let d=JSON.parse(txt);if(d.app!=="eco-aroma-kassa"||!Array.isArray(d.docs))throw new Error("Bu Eco Kassa zaxira fayli emas");
+  let C={},last={};
+  d.docs.forEach(([p,v])=>{let c=String(p).split("/")[0];C[c]=(C[c]||0)+1;v&&E(v.ts)>(last[c]||0)&&(last[c]=E(v.ts))});
+  let nm={products:"Tovarlar",clients:"Mijozlar",suppliers:"Yetkazib beruvchilar",sales:"Cheklar",payments:"To'lovlar",purchases:"Kirimlar",returns:"Qaytarishlar",expenses:"Xarajatlar",shifts:"Kassa yopilishlari",inventory:"Inventarizatsiya",stockLog:"Qoldiq tarixi",certs:"Sertifikatlar",certUses:"Sertifikat ishlatilishi",meta:"Sozlamalar",broadcasts:"Xabarlar",catalog:"Katalog"},
+   cur={products:Object.keys(g.products||{}).length,clients:Object.keys(g.clients||{}).length,suppliers:Object.keys(g.suppliers||{}).length},
+   age=Date.now()-E(d.ts),ok=C.products>0&&C.meta>0;
+  lt("Zaxira fayli tekshiruvi",`<div class="note">${ok?"✅ Fayl butun va o'qiladi.":"⚠️ Faylda tovarlar yoki sozlamalar yo'q — bu to'liq zaxira emas."}<br>Fayl: <b>${V(file.name)}</b> \xB7 olingan: <b>${d.ts?xt(d.ts):"noma'lum"}</b>${d.part==="light"?" \xB7 <b>yengil</b> (oxirgi 8 kun)":d.part==="full"?" \xB7 <b>to'liq</b>":""} \xB7 jami <b>${d.docs.length}</b> ta yozuv${age>8*864e5?'<br><b style="color:var(--danger,#b00)">Diqqat: zaxira 8 kundan eski.</b>':""}</div>
+  <div class="tbl-wrap" style="margin-top:8px"><table class="t"><thead><tr><th>Bo'lim</th><th class="r">Faylda</th><th class="r">Hozir kassada</th><th>Eng oxirgi yozuv</th></tr></thead><tbody>
+  ${Object.entries(C).sort((x,y)=>y[1]-x[1]).map(([c,n])=>`<tr><td>${V(nm[c]||c)}</td><td class="r num">${n}</td><td class="r num">${c in cur?cur[c]:""}</td><td class="num">${last[c]?xt(last[c]):""}</td></tr>`).join("")}
+  </tbody></table></div><div class="muted" style="font-size:13px;margin-top:6px">Bu faqat tekshiruv — kassadagi ma'lumot o'zgarmadi.</div>`)
+ }catch(e){console.error(e);J("Faylni o'qib bo'lmadi: "+(e.message||e))}
+}
+document.addEventListener("change",n=>{let t=n.target;if(t&&t.id==="chkFile"&&t.files&&t.files[0]){xBackupCheck(t.files[0]);t.value=""}});
+/* ===== /Sotuvchilar va zaxira ===== */
 document.addEventListener("click",n=>{
  let t=n.target.closest("[data-x],[data-ilwho],[data-ilshow]");if(!t)return;let d=t.dataset;
  if(d.ilwho!=null){g._ilWho=d.ilwho;xIntakeLog();return}
@@ -2486,7 +2525,8 @@ function NT(){let n=g.settings;return`<h1 class="page">Sozlamalar</h1>
    <div class="note">Hamma ma'lumot Google serverida (Firebase) saqlanadi va istalgan qurilmadan ko'rinadi. Ma'lumotni o'chirish taqiqlangan \u2014 tovar faqat arxivga olinadi. Qo'shimcha xavfsizlik uchun haftada bir marta zaxira faylini olib qo'ying.
    ${(()=>{let e=we.get("eco.lastBackup",0);return e?`<br>Oxirgi zaxira: <b>${xt(e)}</b>`:"<br><b>Hali zaxira olinmagan.</b>"})()}</div>
    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-act="backup">Zaxira faylini yuklab olish</button>
-   <label class="btn" for="impFile" style="display:inline-block">Zaxiradan tiklash\u2026<input type="file" id="impFile" accept=".json,application/json" hidden></label></div>
+   <label class="btn" for="impFile" style="display:inline-block">Zaxiradan tiklash\u2026<input type="file" id="impFile" accept=".json,application/json" hidden></label>
+   <label class="btn" for="chkFile" style="display:inline-block">🔍 Zaxira faylini tekshirish…<input type="file" id="chkFile" accept=".json,.gz,application/json,application/gzip" hidden></label></div>
   </div></div>
   <div class="panel" style="max-width:640px;margin-top:14px"><div class="panel-b" style="display:grid;gap:12px">
    <div class="note"><b>Chek printeri.</b> \xABChekni chiqarish\xBB tugmasi chop etish oynasini ochadi \u2014 chek printeringizni tanlang. Kompyuterda \xABEco Kassa.bat\xBB orqali ochsangiz, chek oynasiz, to'g'ridan-to'g'ri asosiy (default) printerga chiqadi. Windows'da chek printerini \xABAsosiy printer\xBB qilib qo'ying.</div>
