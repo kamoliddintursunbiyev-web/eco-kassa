@@ -333,7 +333,8 @@ async function onMessage(m) {
     const d = Number(cl.debt) || 0;
     if (d <= 0) return send(chat, '📒 Sizda qarz yo\'q. Rahmat! 🌿', kb);
     const p = await db.collection('payments').where('refId', '==', cl.id).get();
-    const pays = p.docs.map(x => x.data()).filter(x => x.kind === 'client').sort((a, b) => b.ts - a.ts).slice(0, 5);
+    const pAll = p.docs.map(x => ({ id: x.id, ...x.data() })).filter(x => x.kind === 'client'), pRev = new Set(pAll.filter(x => x.rev).map(x => x.rev));
+    const pays = pAll.filter(x => !x.rev && !pRev.has(x.id)).sort((a, b) => b.ts - a.ts).slice(0, 5);
     return send(chat, `📒 <b>Qarzingiz</b>\n${LINE}\n<b>${money(d)} so'm</b>${pays.length ? `\n\nOxirgi to'lovlaringiz:\n${pays.map(x => `✅ ${fmt(x.ts)} — ${money(x.amount)} so'm`).join('\n')}` : ''}`, kb);
   }
   return send(chat, 'Quyidagi tugmalardan birini tanlang 👇', kb);
