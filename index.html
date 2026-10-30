@@ -505,7 +505,7 @@ This typically indicates that your device does not have a healthy Internet conne
        ${i.status==="new"?`<button class="btn sm" data-ordacc="${V(i.id)}">Qabul qildim</button>`:""}
        ${i.status==="new"||i.status==="accepted"?`<button class="btn sm danger" data-ordcan="${V(i.id)}">Bekor qilish</button><button class="btn sm primary" data-ordsell="${V(i.id)}">Savatga olish va sotish</button>`:""}
        ${i.saleNo?`<span class="muted">Chek ${V(i.saleNo)}</span>`:""}</div></div>`).join("")||`<div class="empty">Buyurtma yo'q</div>`}</div>
-  <div class="note" style="margin-top:12px">Mijozlar Telegram botdagi \xABDo'kon\xBB tugmasi orqali buyurtma beradi. Yangi buyurtma kelganda shu yerda ovozli signal chiqadi. Narx va qoldiq botda avtomatik yangilanadi.</div>`}function kT(n){g.cart=[];let e=0;(n.items||[]).forEach(r=>{let s=g.products[r.pid];s?g.cart.push({pid:s.id,name:s.name,price:E(s.price),cost:E(s.cost),qty:E(r.qty)}):e++});let t=String(n.phone||"").replace(/\D/g,"").slice(-9),i=Object.values(g.clients).find(r=>t&&String(r.phone||"").replace(/\D/g,"").slice(-9)===t);if(!i&&n.name){let r=tt();i={id:r,name:n.name,phone:n.phone||"",discount:0,note:n.tgUser?"Telegram: @"+n.tgUser:"Telegram mijoz",debt:0,created:Date.now()},mt("clients",r,{...i}),g.clients[r]=i}g.cartClient=i?i.id:null,g.discount={type:"pct",val:i&&E(i.discount)?E(i.discount):0},g.pay={cash:"",card:"",cb:""},g.pendingOrder=n.id,zt("sotuv"),e&&J(`${e} ta tovar topilmadi`)}function _d(){let n=(g.orders||[]).filter(r=>r.status==="new").length;["#ordBadge","#ordBadge2"].forEach(r=>{let s=q(r);s&&(s.textContent=n,s.hidden=!n)});let e=q("#mConn");e&&(e.className="mdot"+(navigator.onLine&&!ee.pending?"":" off"));let[t]=wd("today"),i=g.sales.filter(r=>r.ts>=t);q("#todaySum").textContent=O(i.reduce((r,s)=>r+E(s.total),0)),q("#todayCnt").textContent=i.length+" ta chek"}function cv(){let n=new Date;q("#clock").textContent=En(n.getHours())+":"+En(n.getMinutes())}function zt(n){Le&&n!=="sozlama"&&(Le=null,li(g.settings.theme)),g.tab=n,document.querySelectorAll("#tabs button, #bnav button").forEach(e=>e.setAttribute("aria-selected",String(e.dataset.tab===n||e.dataset.more!==void 0&&["mijozlar","taminot","hisobot","sozlama","inventar","kassa","marketing","tahlil"].includes(n)))),we.set("eco.tab",n),se(!0)}q("#tabs").addEventListener("click",n=>{let e=n.target.closest("button[data-tab]");e&&zt(e.dataset.tab)});var gt=()=>Object.values(g.products).filter(n=>!n.archived).sort((n,e)=>(n.name||"").localeCompare(e.name||"")),bd=n=>{let e=E(n.qty),t=E(n.min||3);return e<0?`<span class="pill out num">minus ${O(-e)}</span>`:e===0?'<span class="pill out num">0 dona</span>':e<=t?`<span class="pill low num">${O(e)} dona</span>`:`<span class="pill num">${O(e)} dona</span>`};function ci(){let n=g.cart.reduce((x,N)=>x+N.qty*N.price,0),e=g.discount.type==="pct"?Math.round(n*Math.min(100,E(g.discount.val))/100):Math.min(n,E(g.discount.val)),t=ue()?n:Math.round(n*xMaxDisc()/100),i=e>t;i&&(e=t);let xpd=xPromo(g.cart);e=Math.min(n,e+xpd.amt);let r=Math.max(0,n-e),s=g.cartClient?g.clients[g.cartClient]:null,o=s?Math.max(0,E(s.cashback)):0,c=Math.min(Math.max(0,E(g.pay.cb)),o,r),xc=Math.min(xCertAmt(),Math.max(0,r-c)),l=E(g.pay.cash),h=E(g.pay.card),f=Math.min(r,l+h+c+xc),p=Math.max(0,r-c-xc-l-h),y=Math.max(0,l+h+c+xc-r),S=s?Math.round(Math.max(0,Math.min(r-c,l+h))*E(g.settings.cashbackPct)/100):0;return{promo:xpd,cert:xc,cb:c,cbAvail:o,cbEarn:S,capped:i,sub:n,disc:e,total:r,cash:l,card:h,paid:f,debt:p,change:y,cost:g.cart.reduce((x,N)=>x+N.qty*E(N.cost),0),count:g.cart.reduce((x,N)=>x+N.qty,0)}}function fd(n,e=1){if(!n)return;let t=g.cart.find(r=>r.pid===n.id),i=(t?t.qty:0)+e;if(E(n.qty)-i<0){if(g.settings.allowNegative===!1){J(`"${n.name}" omborda yetarli emas (${O(n.qty)} dona). Minusga sotish o'chirilgan.`);return}J(`"${n.name}" omborda yo'q \u2014 minusga sotilmoqda`)}t?t.qty+=e:g.cart.push({pid:n.id,name:n.name,price:E(n.price),cost:E(n.cost),qty:e}),se()}var zy=null;function se(n){if(g.gate)return;let e=q("#main"),t=document.activeElement&&document.activeElement.id,i=document.activeElement&&document.activeElement.selectionStart;if(!xTabOk(g.tab)?e.innerHTML=xNoPerm():g.tab==="bosh"?e.innerHTML=IT():g.tab==="sotuv"?e.innerHTML=RT():g.tab==="tovarlar"?e.innerHTML=PT():g.tab==="mijozlar"?e.innerHTML=CT():g.tab==="taminot"?e.innerHTML=DT():g.tab==="hisobot"?e.innerHTML=xT():g.tab==="inventar"?e.innerHTML=invPage():g.tab==="kassa"?e.innerHTML=xKassaPage():g.tab==="marketing"?e.innerHTML=xMarketPage():g.tab==="tahlil"?e.innerHTML=xAnalysisPage():g.tab==="buyurtma"?e.innerHTML=ST():e.innerHTML=NT(),t&&!n){let r=document.getElementById(t);if(r){r.focus();try{i!=null&&r.setSelectionRange(i,i)}catch{}}}else if(g.tab==="sotuv"&&(n||zy!=="sotuv")){let r=q("#scan");r&&r.focus()}g.tab==="inventar"&&zy!=="inventar"&&setTimeout(()=>{let r=q("#invScan");r&&!rr()&&r.focus()},0),zy=g.tab,_d()}function RT(){let n=g.q.trim().toLowerCase(),e=gt();n&&(e=e.filter(o=>(o.name||"").toLowerCase().includes(n)||bcs(o).some(b=>b.includes(n))||(o.cat||"").toLowerCase().includes(n)));let t=ci(),i=g.cartClient?g.clients[g.cartClient]:null,r=e.slice(0,120).map(o=>`<button class="card" data-add="${V(o.id)}">${o.img?`<img class="ph" src="${o.img}" alt="" loading="lazy">`:`<span class="ph none" aria-hidden="true">${sv(o.name)}</span>`}<span class="nm">${V(o.name)}</span>
+  <div class="note" style="margin-top:12px">Mijozlar Telegram botdagi \xABDo'kon\xBB tugmasi orqali buyurtma beradi. Yangi buyurtma kelganda shu yerda ovozli signal chiqadi. Narx va qoldiq botda avtomatik yangilanadi.</div>`}function kT(n){g.cart=[];let e=0;(n.items||[]).forEach(r=>{let s=g.products[r.pid];s?g.cart.push({pid:s.id,name:s.name,price:E(s.price),cost:E(s.cost),qty:E(r.qty)}):e++});let t=String(n.phone||"").replace(/\D/g,"").slice(-9),i=Object.values(g.clients).find(r=>t&&String(r.phone||"").replace(/\D/g,"").slice(-9)===t);if(!i&&n.name){let r=tt();i={id:r,name:n.name,phone:n.phone||"",discount:0,note:n.tgUser?"Telegram: @"+n.tgUser:"Telegram mijoz",debt:0,created:Date.now()},mt("clients",r,{...i}),g.clients[r]=i}g.cartClient=i?i.id:null,g.discount={type:"pct",val:i&&E(i.discount)?E(i.discount):0},g.pay={cash:"",card:"",cb:""},g.pendingOrder=n.id,zt("sotuv"),e&&J(`${e} ta tovar topilmadi`)}function _d(){let n=(g.orders||[]).filter(r=>r.status==="new").length;["#ordBadge","#ordBadge2"].forEach(r=>{let s=q(r);s&&(s.textContent=n,s.hidden=!n)});let e=q("#mConn");e&&(e.className="mdot"+(navigator.onLine&&!ee.pending?"":" off"));let[t]=wd("today"),i=g.sales.filter(r=>r.ts>=t);q("#todaySum").textContent=O(i.reduce((r,s)=>r+E(s.total),0)),q("#todayCnt").textContent=i.length+" ta chek"}function cv(){let n=new Date;q("#clock").textContent=En(n.getHours())+":"+En(n.getMinutes())}function zt(n){Le&&n!=="sozlama"&&(Le=null,li(g.settings.theme)),g.tab=n,document.querySelectorAll("#tabs button, #bnav button").forEach(e=>e.setAttribute("aria-selected",String(e.dataset.tab===n||e.dataset.more!==void 0&&["mijozlar","taminot","hisobot","sozlama","inventar","kassa","marketing","tahlil"].includes(n)))),we.set("eco.tab",n),se(!0)}q("#tabs").addEventListener("click",n=>{let e=n.target.closest("button[data-tab]");e&&zt(e.dataset.tab)});var gt=()=>Object.values(g.products).filter(n=>!n.archived).sort((n,e)=>(n.name||"").localeCompare(e.name||"")),bd=n=>{let e=E(n.qty),t=E(n.min||3);return e<0?`<span class="pill out num">minus ${O(-e)}</span>`:e===0?'<span class="pill out num">0 dona</span>':e<=t?`<span class="pill low num">${O(e)} dona</span>`:`<span class="pill num">${O(e)} dona</span>`};function ci(){let n=g.cart.reduce((x,N)=>x+N.qty*N.price,0),e=g.discount.type==="pct"?Math.round(n*Math.min(100,E(g.discount.val))/100):Math.min(n,E(g.discount.val)),t=ue()?n:Math.round(n*xMaxDisc()/100),i=e>t;i&&(e=t);let xpd=xPromo(g.cart);e=Math.min(n,e+xpd.amt);let r=Math.max(0,n-e),s=g.cartClient?g.clients[g.cartClient]:null,o=s?Math.max(0,E(s.cashback)):0,c=Math.min(Math.max(0,E(g.pay.cb)),o,r),xc=Math.min(xCertAmt(),Math.max(0,r-c)),l=E(g.pay.cash),h=E(g.pay.card),f=Math.min(r,l+h+c+xc),p=Math.max(0,r-c-xc-l-h),y=Math.max(0,l+h+c+xc-r),S=s?Math.round(Math.max(0,Math.min(r-c,l+h))*xCbPct(s)/100):0;return{promo:xpd,cert:xc,cb:c,cbAvail:o,cbEarn:S,capped:i,sub:n,disc:e,total:r,cash:l,card:h,paid:f,debt:p,change:y,cost:g.cart.reduce((x,N)=>x+N.qty*E(N.cost),0),count:g.cart.reduce((x,N)=>x+N.qty,0)}}function fd(n,e=1){if(!n)return;let t=g.cart.find(r=>r.pid===n.id),i=(t?t.qty:0)+e;if(E(n.qty)-i<0){if(g.settings.allowNegative===!1){J(`"${n.name}" omborda yetarli emas (${O(n.qty)} dona). Minusga sotish o'chirilgan.`);return}J(`"${n.name}" omborda yo'q \u2014 minusga sotilmoqda`)}t?t.qty+=e:g.cart.push({pid:n.id,name:n.name,price:E(n.price),cost:E(n.cost),qty:e}),se()}var zy=null;function se(n){if(g.gate)return;let e=q("#main"),t=document.activeElement&&document.activeElement.id,i=document.activeElement&&document.activeElement.selectionStart;if(!xTabOk(g.tab)?e.innerHTML=xNoPerm():g.tab==="bosh"?e.innerHTML=IT():g.tab==="sotuv"?e.innerHTML=RT():g.tab==="tovarlar"?e.innerHTML=PT():g.tab==="mijozlar"?e.innerHTML=CT():g.tab==="taminot"?e.innerHTML=DT():g.tab==="hisobot"?e.innerHTML=xT():g.tab==="inventar"?e.innerHTML=invPage():g.tab==="kassa"?e.innerHTML=xKassaPage():g.tab==="marketing"?e.innerHTML=xMarketPage():g.tab==="tahlil"?e.innerHTML=xAnalysisPage():g.tab==="buyurtma"?e.innerHTML=ST():e.innerHTML=NT(),t&&!n){let r=document.getElementById(t);if(r){r.focus();try{i!=null&&r.setSelectionRange(i,i)}catch{}}}else if(g.tab==="sotuv"&&(n||zy!=="sotuv")){let r=q("#scan");r&&r.focus()}g.tab==="inventar"&&zy!=="inventar"&&setTimeout(()=>{let r=q("#invScan");r&&!rr()&&r.focus()},0),zy=g.tab,_d()}function RT(){let n=g.q.trim().toLowerCase(),e=gt();n&&(e=e.filter(o=>(o.name||"").toLowerCase().includes(n)||bcs(o).some(b=>b.includes(n))||(o.cat||"").toLowerCase().includes(n)));let t=ci(),i=g.cartClient?g.clients[g.cartClient]:null,r=e.slice(0,120).map(o=>`<button class="card" data-add="${V(o.id)}">${o.img?`<img class="ph" src="${o.img}" alt="" loading="lazy">`:`<span class="ph none" aria-hidden="true">${sv(o.name)}</span>`}<span class="nm">${V(o.name)}</span>
      <span class="muted" style="font-size:12px">${V(o.cat||"")}${o.barcode?" \xB7 "+V(o.barcode):""}</span>
      <span class="row"><span class="pr num">${O(o.price)}</span>${bd(o)}</span></button>`).join(""),s=g.cart.map((o,c)=>`<div class="ci">
       <div class="nm">${V(o.name)}</div>
@@ -521,7 +521,7 @@ This typically indicates that your device does not have a healthy Internet conne
      <div class="panel-h"><h2>Savat</h2><span class="pill num">${O(t.count)} dona</span><span class="spacer"></span><button class="btn sm" data-x="retfind">\u21A9 Qaytarish</button>${g.cart.length?'<button class="btn sm" data-act="clear">Tozalash</button>':""}</div>
      <div class="client-box">
        ${i?`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>${V(i.name)}</b><span class="muted num">${V(i.phone||"")}</span>
-          ${E(i.debt)>0?`<span class="pill debt num">qarzi ${O(i.debt)}</span>`:""}${E(i.discount)>0?`<span class="pill ok">${E(i.discount)}% chegirma</span>`:""}
+          ${E(i.debt)>0?`<span class="pill debt num">qarzi ${O(i.debt)}</span>`:""}${E(i.discount)>0?`<span class="pill ok">${E(i.discount)}% chegirma</span>`:""}${xClientPills(i)}
           <span class="spacer"></span><button class="btn sm" data-act="unclient">Olib tashlash</button></div>`:'<input id="clientQ" class="f" placeholder="Mijoz: ism yoki telefon (ixtiyoriy)" autocomplete="off" aria-label="Mijoz qidirish"><div id="clientSug"></div>'}
      </div>
      <div class="cart-items">${s||'<div class="empty">Tovarni bosing yoki skanerlang</div>'}</div>
@@ -1025,7 +1025,7 @@ document.addEventListener("click",async n=>{
 /* ===== /To'lovlarni tuzatish ===== */
 /* ===== Sotuvchilar hisoboti va bonus ===== */
 function xSellerPanel(sales,a,b){
- let own=ue(),R=xRange("returns",a,b),Sh=xRange("shifts",a,b),bp=E((g.settings||{}).bonusPct),
+ let own=ue(),R=xRange("returns",a,b),Sh=xRange("shifts",a,b),bp=E((g.settings||{}).sellerPct),
   bySale={};sales.forEach(s=>bySale[s.id]=s.seller||"—");
  let M={},row=k=>M[k]=M[k]||{n:0,sum:0,disc:0,cost:0,ret:0,rn:0,diff:0,sh:0,items:0};
  sales.forEach(s=>{let r=row(s.seller||"—");r.n++;r.sum+=E(s.total);r.disc+=E(s.discount);r.items+=(s.items||[]).reduce((t,i)=>t+E(i.qty),0);r.cost+=(s.items||[]).reduce((t,i)=>t+E(i.cost)*E(i.qty),0)});
@@ -1033,14 +1033,13 @@ function xSellerPanel(sales,a,b){
  xUq((Sh.list||[]).concat(g.shifts||[])).filter(x=>E(x.ts)>=a&&E(x.ts)<b).forEach(x=>{let r=row(x.seller||"—");r.diff+=E(x.diff);r.sh++});
  let L=Object.entries(M).sort((x,y)=>(y[1].sum-y[1].ret)-(x[1].sum-x[1].ret));
  if(!L.length)return"";
- return`<div class="panel" style="margin:14px 0"><div class="panel-h"><h2>👤 Sotuvchilar natijasi</h2>${own?`<span class="spacer"></span><label style="display:flex;gap:6px;align-items:center;font-size:13px">Bonus (sof savdodan, %)<input id="bonusPct" class="f num" style="width:70px" inputmode="decimal" value="${bp||""}" placeholder="0"></label>`:""}</div>
- <div class="tbl-wrap"><table class="t"><thead><tr><th>Sotuvchi</th><th class="r">Cheklar</th><th class="r">Savdo</th><th class="r">O'rtacha chek</th><th class="r">Dona</th><th class="r">Chegirma</th><th class="r">Qaytarildi</th><th class="r">Sof savdo</th>${own?'<th class="r">Foyda</th>':""}<th class="r" title="Kassa yopilganda sanalgan pul va kutilgan pul farqi">Kassa farqi</th>${bp?'<th class="r">Bonus</th>':""}</tr></thead><tbody>
+ return`<div class="panel" style="margin:14px 0"><div class="panel-h"><h2>👤 Sotuvchilar natijasi</h2>${own?`<span class="spacer"></span><label style="display:flex;gap:6px;align-items:center;font-size:13px">Ish haqi / bonus (sof savdodan, %)<input id="selPct" class="f num" style="width:70px" inputmode="decimal" value="${bp||""}" placeholder="0"></label>`:""}</div>
+ <div class="tbl-wrap"><table class="t"><thead><tr><th>Sotuvchi</th><th class="r">Cheklar</th><th class="r">Savdo</th><th class="r">O'rtacha chek</th><th class="r">Dona</th><th class="r">Chegirma</th><th class="r">Qaytarildi</th><th class="r">Sof savdo</th>${own?'<th class="r">Foyda</th>':""}<th class="r" title="Kassa yopilganda sanalgan pul va kutilgan pul farqi">Kassa farqi</th>${bp?`<th class="r">Ish haqi ${bp}%</th>`:""}</tr></thead><tbody>
  ${L.map(([k,r])=>{let net=r.sum-r.ret;return`<tr><td><b>${V(k)}</b></td><td class="r num">${r.n}</td><td class="r num">${O(r.sum)}</td><td class="r num">${r.n?O(r.sum/r.n):"—"}</td><td class="r num">${O(r.items)}</td><td class="r num">${O(r.disc)}</td><td class="r num">${r.ret?`${O(r.ret)} <span class="muted">(${r.rn})</span>`:"—"}</td><td class="r num"><b>${O(net)}</b></td>${own?`<td class="r num">${O(r.sum-r.cost)}</td>`:""}<td class="r num">${r.sh?`<span class="pill ${r.diff<0?"out":r.diff>0?"low":"ok"}">${r.diff>0?"+":""}${xNeg(r.diff)}</span>`:"—"}</td>${bp?`<td class="r num"><b>${O(net*bp/100)}</b></td>`:""}</tr>`}).join("")}
  </tbody></table></div>
  ${R.ready&&Sh.ready?"":'<div class="muted" style="font-size:12px;padding:6px 12px">Qaytarish va kassa yopilishlari yuklanmoqda…</div>'}
- <div class="muted" style="font-size:12px;padding:6px 12px">Sof savdo = savdo − qaytarilgan. Kassa farqi: minus — kassada pul kam chiqqan, plus — ortiqcha.${own?" Bonus foizini yozsangiz, har sotuvchining bonusi hisoblanadi.":""}</div></div>`
+ <div class="muted" style="font-size:12px;padding:6px 12px">Sof savdo = savdo − qaytarilgan. Kassa farqi: minus — kassada pul kam chiqqan, plus — ortiqcha.${own?" Ish haqi foizini yozsangiz, har sotuvchiga tegishli summa hisoblanadi.":""}</div></div>`
 }
-document.addEventListener("change",n=>{let t=n.target;if(t&&t.id==="bonusPct"&&ue()){let v=Math.max(0,Math.min(50,E(t.value)));Ze("meta","settings",{bonusPct:v});g.settings.bonusPct=v;J("Bonus foizi saqlandi");se()}});
 
 /* ===== Zaxira faylini tekshirish (tiklamasdan) ===== */
 async function xBackupCheck(file){
@@ -1062,6 +1061,76 @@ async function xBackupCheck(file){
 }
 document.addEventListener("change",n=>{let t=n.target;if(t&&t.id==="chkFile"&&t.files&&t.files[0]){xBackupCheck(t.files[0]);t.value=""}});
 /* ===== /Sotuvchilar va zaxira ===== */
+/* ===== Mijoz darajalari, shaxsiy takliflar, avtomatik xabarlar ===== */
+var xOfferTag="\u{1F381} Shaxsiy taklif";
+function xTiers(){return((g.settings||{}).tiers||[]).filter(t=>t&&t.name&&E(t.min)>0).sort((a,b)=>E(a.min)-E(b.min))}
+function xTier(cl){let T=xTiers(),s=E(cl&&cl.spent),r=null;T.forEach(t=>{s>=E(t.min)&&(r=t)});return r}
+function xTierNext(cl){let s=E(cl&&cl.spent);return xTiers().find(t=>E(t.min)>s)||null}
+function xCbPct(cl){let b=E((g.settings||{}).cashbackPct),t=xTier(cl);return t?Math.max(b,E(t.cb)):b}
+function xOffer(cl){let o=cl&&cl.offer;return o&&E(o.until)>Date.now()&&E(o.pct)>0?o:null}
+function xClientPills(cl){
+ if(!cl)return"";let t=xTier(cl),o=xOffer(cl);
+ return`${t?`<span class="pill ok" title="Keshbek ${E(xCbPct(cl))}%">\u{1F3C5} ${V(t.name)}</span>`:""}${o?`<span class="pill low" title="${xt(E(o.until))} gacha">\u{1F381} ${E(o.pct)}% taklif</span>`:""}`
+}
+async function xSpentBackfill(btn){
+ if(!ue())return;let a=Date.now()-365*864e5,R=xRange("sales",a,1/0);
+ if(!R.ready){J("Savdolar yuklanmoqda, bir necha soniyadan keyin qayta bosing");return}
+ btn&&(btn.disabled=!0);let st={};
+ xUq((R.list||[]).concat(g.sales||[])).forEach(s=>{s.clientId&&(st[s.clientId]=(st[s.clientId]||0)+E(s.total))});
+ let n=0;for(let c of Object.values(g.clients||{})){let v=Math.round(st[c.id]||0);if(v!==E(c.spent)){await Ze("clients",c.id,{spent:v});c.spent=v;n++}}
+ J(`${n} ta mijozning xarid summasi yangilandi`);se()
+}
+function xAutoPanel(){
+ let st=g.settings||{},rf=Object.assign({on:!1,days:30,pct:5,valid:7},st.refill||{}),wb=Object.assign({on:!1,days:45,pct:10,valid:7},st.winback||{}),
+  T=(st.tiers&&st.tiers.length?st.tiers:[{name:"Kumush",min:1000000,cb:3},{name:"Oltin",min:3000000,cb:5},{name:"Platina",min:7000000,cb:7}]).slice(0,4),
+  cl=Object.values(g.clients||{}),cnt=t=>cl.filter(c=>{let x=xTier(c);return x&&x.name===t.name}).length,offers=cl.filter(c=>xOffer(c)).length,
+  shop=st.shopName||"Eco Aroma",
+  blk=(k,o,title,desc,prev)=>`<div style="display:grid;gap:8px;padding:10px 0;border-top:1px solid var(--line)">
+   <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" data-au="${k}.on" ${o.on?"checked":""}> ${title}</label>
+   <div class="muted" style="font-size:13px">${desc}</div>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
+    <label class="l">Necha kundan keyin<input class="f num" data-au="${k}.days" value="${E(o.days)}" inputmode="numeric"></label>
+    <label class="l">Chegirma (%), 0 = yo'q<input class="f num" data-au="${k}.pct" value="${E(o.pct)}" inputmode="decimal"></label>
+    <label class="l">Chegirma necha kun amal qiladi<input class="f num" data-au="${k}.valid" value="${E(o.valid)}" inputmode="numeric"></label>
+   </div>
+   <div class="note" style="font-size:13px;white-space:pre-line"><b>Xabar namunasi:</b>\n${prev}</div></div>`;
+ return`<div class="two" style="margin-bottom:14px">
+ <div class="panel"><div class="panel-h"><h2>\u{1F916} Avtomatik xabarlar (Telegram bot)</h2></div><div class="panel-b" style="display:grid;gap:4px">
+  <div class="muted" style="font-size:13px">Bot har kuni soat 11:00 da tekshiradi va mos mijozlarga o'zi yozadi. Chegirma kassada mijoz tanlanganda o'zi qo'shiladi va bir marta ishlatiladi. Hozir amaldagi shaxsiy takliflar: <b>${offers}</b> ta.</div>
+  ${blk("refill",rf,"\u{1F9F4} «Mahsulotingiz tugayapti» eslatmasi","Xarid qilganiga shuncha kun bo'lgan va o'shandan beri kelmagan mijozga yuboriladi.",`\u{1F33F} Malika, salom!\n${E(rf.days)} kun oldin ${shop}dan Keratin shampun olgan edingiz. Tugab qolayotgan bo'lsa — vaqtida to'ldirib qo'ying \u{1F60A}${E(rf.pct)?`\n\u{1F381} Siz uchun ${E(rf.pct)}% chegirma — ${E(rf.valid)} kun amal qiladi.`:""}`)}
+  ${blk("winback",wb,"\u{1F338} «Sizni sog'indik» xabari","Shuncha kundan beri kelmagan mijozga bir marta yuboriladi.",`\u{1F338} Malika, sizni sog'indik!\nAnchadan beri ${shop}ga kelmadingiz. Yangi mahsulotlar keldi \u{1F33F}${E(wb.pct)?`\n\u{1F381} Siz uchun ${E(wb.pct)}% chegirma — ${E(wb.valid)} kun amal qiladi.`:""}`)}
+ </div></div>
+ <div class="panel"><div class="panel-h"><h2>\u{1F3C5} Mijoz darajalari</h2></div><div class="panel-b" style="display:grid;gap:8px">
+  <div class="muted" style="font-size:13px">Mijozning jami xaridi shu summaga yetsa, darajasi oshadi va keshbek foizi ko'payadi (umumiy keshbek: <b>${E(st.cashbackPct)}%</b>). Daraja kassada mijoz yonida ko'rinadi. Nomini bo'sh qoldirsangiz, o'sha daraja o'chadi.</div>
+  <div class="tbl-wrap"><table class="t"><thead><tr><th>Daraja nomi</th><th class="r">Jami xarid (so'm)</th><th class="r">Keshbek %</th><th class="r">Mijozlar</th></tr></thead><tbody>
+  ${[0,1,2,3].map(i=>{let t=T[i]||{name:"",min:"",cb:""};return`<tr><td><input class="f" data-tier="${i}.name" value="${V(t.name||"")}" placeholder="—"></td><td class="r"><input class="f num" style="text-align:right" data-tier="${i}.min" value="${t.min||""}" inputmode="numeric"></td><td class="r"><input class="f num" style="width:70px;text-align:right" data-tier="${i}.cb" value="${t.cb||""}" inputmode="decimal"></td><td class="r num">${st.tiers&&t.name?cnt(t):"—"}</td></tr>`}).join("")}
+  </tbody></table></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-x="tiersave">Darajalarni saqlash</button><button class="btn" data-x="spentcalc">\u{1F504} Mijozlar xaridini qayta hisoblash</button></div>
+  <div class="muted" style="font-size:12px">Birinchi marta saqlagandan keyin «qayta hisoblash»ni bir marta bosing — oxirgi bir yillik xaridlar hisoblanadi. Keyin har xariddan o'zi qo'shilib boradi.</div>
+ </div></div></div>`
+}
+document.addEventListener("change",n=>{
+ let t=n.target;if(!t||!t.dataset||!t.dataset.au||!ue())return;
+ let[k,f]=t.dataset.au.split("."),st=g.settings||{},cur=Object.assign(k==="refill"?{on:!1,days:30,pct:5,valid:7}:{on:!1,days:45,pct:10,valid:7},st[k]||{});
+ cur[f]=f==="on"?t.checked:Math.max(0,Math.min(f==="pct"?50:365,E(t.value)));
+ if(f==="days"&&cur.days<7)cur.days=7;if(f==="valid"&&cur.valid<1)cur.valid=1;
+ Ze("meta","settings",{[k]:cur});g.settings[k]=cur;J(f==="on"?(cur.on?"Yoqildi — bot ertadan boshlab yuboradi":"O'chirildi"):"Saqlandi");se()
+});
+document.addEventListener("click",async n=>{
+ let t=n.target.closest&&n.target.closest('[data-x="tiersave"],[data-x="spentcalc"]');if(!t||!ue())return;
+ if(t.dataset.x==="spentcalc"){await xSpentBackfill(t);return}
+ let T=[0,1,2,3].map(i=>({name:((q(`[data-tier="${i}.name"]`)||{}).value||"").trim(),min:E((q(`[data-tier="${i}.min"]`)||{}).value),cb:Math.min(50,E((q(`[data-tier="${i}.cb"]`)||{}).value))})).filter(x=>x.name&&x.min>0);
+ await Ze("meta","settings",{tiers:T});g.settings.tiers=T;J(T.length?`${T.length} ta daraja saqlandi`:"Darajalar o'chirildi");se()
+});
+// Buyurtma: yetkazib beruvchining Telegram chatini to'g'ridan-to'g'ri ochish (matn nusxalanadi)
+function xSupTg(sid){let s=(g.suppliers||{})[sid],p=String(s&&s.phone||"").replace(/[^\d+]/g,"");if(!p)return"";p.startsWith("+")||(p=(p.length===9?"+998":"+")+p);return"https://t.me/"+p}
+document.addEventListener("click",async n=>{
+ let t=n.target.closest&&n.target.closest("[data-olchat]");if(!t)return;n.stopPropagation();
+ let gp=(g._olg||[])[+t.dataset.olchat];if(!gp)return;let url=xSupTg(gp.sid);
+ try{await navigator.clipboard.writeText(xOrdText(gp));J("Ro'yxat nusxalandi — chatga joylang (Ctrl+V)")}catch{}
+ url&&window.open(url,"_blank")
+},!0);
+/* ===== /Mijoz darajalari va takliflar ===== */
 document.addEventListener("click",n=>{
  let t=n.target.closest("[data-x],[data-ilwho],[data-ilshow]");if(!t)return;let d=t.dataset;
  if(d.ilwho!=null){g._ilWho=d.ilwho;xIntakeLog();return}
@@ -1493,7 +1562,7 @@ function xOrdText(gp){
 function xOrdModal(){
  g._rt=xRates(30);let gs=xOrdGroups();g._olg=gs;
  lt("Buyurtma ro'yxati",gs.length?`<div class="note">Kam qolgan tovarlar yetkazib beruvchilar bo'yicha ajratildi. Sonini o'zgartirib, ro'yxatni Telegramda yuboring yoki nusxa oling.</div>
- ${gs.map((gp,k)=>`<div class="panel" style="margin-top:12px"><div class="panel-h"><h2>${V(gp.name)}</h2><span class="spacer"></span><button class="btn sm" data-olcopy="${k}">\u{1F4CB} Nusxa</button><button class="btn sm primary" data-olsend="${k}">\u{1F4E4} Telegram</button></div>
+ ${gs.map((gp,k)=>`<div class="panel" style="margin-top:12px"><div class="panel-h"><h2>${V(gp.name)}</h2><span class="spacer"></span>${xSupTg(gp.sid)?`<button class="btn sm" data-olchat="${k}" title="Yetkazib beruvchining Telegram chatini ochadi, ro'yxat nusxalanadi">\u{1F4AC} Chatini ochish</button>`:""}<button class="btn sm" data-olcopy="${k}">\u{1F4CB} Nusxa</button><button class="btn sm primary" data-olsend="${k}">\u{1F4E4} Telegram</button></div>
  <div class="tbl-wrap"><table class="t"><thead><tr><th>Tovar</th><th class="r">Qoldiq</th><th class="r">Buyurtma</th></tr></thead><tbody>
  ${gp.ps.map(p=>`<tr><td>${V(p.name)}</td><td class="r num">${O(p.qty)}</td><td class="r"><input class="f num" style="width:70px;text-align:right" data-olq="${V(p.id)}" value="${g._ol[p.id]??xOrdNeed(p)}" inputmode="numeric"></td></tr>`).join("")}
  </tbody></table></div></div>`).join("")}`:'<div class="note">Hamma tovar yetarli — buyurtma kerak emas ✓</div>')
@@ -1521,10 +1590,7 @@ function xRepExtra(a,b){
  let pct=E((g.settings||{}).sellerPct),sl={};
  sales.forEach(x=>{let k=x.seller||"—",o=sl[k]=sl[k]||{n:0,s:0,r:0};o.n++;o.s+=E(x.total)});
  rets.forEach(x=>{let s=sales.find(y=>y.id===x.saleId),k=s&&s.seller||x.seller||"—",o=sl[k]=sl[k]||{n:0,s:0,r:0};o.r+=E(x.amount)});
- h+=`<div class="two" style="margin-bottom:14px">
- <div class="panel"><div class="panel-h"><h2>Sotuvchilar hisoboti</h2></div><div class="tbl-wrap"><table class="t"><thead><tr><th>Sotuvchi</th><th class="r">Cheklar</th><th class="r">Sof savdo</th><th class="r">O'rtacha chek</th>${pct?`<th class="r">Ish haqi ${pct}%</th>`:""}</tr></thead><tbody>
- ${Object.entries(sl).sort((x,y)=>y[1].s-x[1].s).map(([k,o])=>`<tr><td>${V(k)}${o.r?`<div class="muted" style="font-size:12px">qaytarish: ${O(o.r)}</div>`:""}</td><td class="r num">${o.n}</td><td class="r num">${O(o.s-o.r)}</td><td class="r num">${O(o.n?o.s/o.n:0)}</td>${pct?`<td class="r num"><b>${O((o.s-o.r)*pct/100)}</b></td>`:""}</tr>`).join("")||'<tr><td colspan="5" class="muted">Bu davrda savdo yo\'q</td></tr>'}
- </tbody></table></div><div class="panel-b"><label class="l" for="selPct" style="max-width:280px">Sotuvchi ish haqi foizi (sof savdodan, 0 = ko'rsatilmaydi)<input id="selPct" class="f num" value="${pct||""}" placeholder="0" inputmode="decimal"></label></div></div>
+ h+=`<div style="margin-bottom:14px">
  <div class="panel"><div class="panel-h"><h2>Xarajatlar turi bo'yicha</h2></div><div class="panel-b" style="display:grid;gap:10px">
  ${bcE.map(([k,v])=>`<div><div style="display:flex;justify-content:space-between"><span>${V(k)}</span><b class="num">${O(v)}</b></div><div class="bar"><i style="width:${eAmt?Math.round(v/eAmt*100):0}%"></i></div></div>`).join("")||'<div class="muted">Bu davrda xarajat yo\'q. Xarajatlar \xABKassa va xarajatlar\xBB bo\'limida kiritiladi.</div>'}
  </div></div></div>`;
@@ -1639,11 +1705,12 @@ function xPromo(cart){
   let full=p.pids.reduce((s,id)=>s+(pr[id]||0),0)*k,d=full-E(p.price)*k;
   if(d>0){add(p.name,d);p.pids.forEach(id=>av[id]-=k)}
  });
- let cl=g.cartClient?g.clients[g.cartClient]:null,bp=E((g.settings||{}).bdayPct),bd=bp>0&&xBdayNear(cl);
+ let cl=g.cartClient?g.clients[g.cartClient]:null,bp=E((g.settings||{}).bdayPct),bd=bp>0&&xBdayNear(cl),of=xOffer(cl);
  Object.keys(av).forEach(pid=>{
   let a=av[pid],price=pr[pid]||0;if(a<=0)return;let best=0,bn="";
   ps.forEach(p=>{if(!xPromoIn(p,pid))return;let d=p.type==="pct"?a*price*Math.min(100,E(p.pct))/100:p.type==="nx"&&E(p.n)>0?Math.floor(a/(E(p.n)+1))*price:0;d>best&&(best=d,bn=p.name)});
   if(bd){let d=a*price*bp/100;d>best&&(best=d,bn="\u{1F382} Tug'ilgan kun "+bp+"%")}
+  if(of){let d=a*price*E(of.pct)/100;d>best&&(best=d,bn=xOfferTag+" "+E(of.pct)+"%")}
   best>0&&add(bn,best)
  });
  out.list=Object.entries(agg).map(([name,amt])=>({name,amt}));out.amt=out.list.reduce((s,x)=>s+x.amt,0);
@@ -1718,7 +1785,7 @@ function xCertPayHtml(t){
 }
 async function xAfterSale(r,id){
  if(E(r.cert)>0&&r.certId){await Ze("certs",r.certId,{balance:Tn(-E(r.cert)),lastUse:Date.now()});await mt("certUses",tt(),{certId:r.certId,saleId:id,saleNo:r.no,amount:E(r.cert),ts:Date.now(),seller:g.seller||""})}
- r.clientId&&await Ze("clients",r.clientId,{lastTs:r.ts})
+ r.clientId&&await Ze("clients",r.clientId,{lastTs:r.ts,spent:Tn(E(r.total)),...(r.promos||[]).some(p=>String(p.name||"").startsWith(xOfferTag))?{offer:null}:{}})
 }
 function xCertSell(){
  lt("Sovg'a sertifikati sotish",`<div class="fg">
@@ -2026,7 +2093,7 @@ function xMarketPage(){
  let st=g.settings||{},ps=xPromos(),certs=Object.values(g.certs||{}).sort((a,b)=>b.ts-a.ts),
   live=certs.filter(c=>E(c.balance)>0),days=g._lostD||60,L=xLost(days),bd=xBdays(7),
   tgN=Object.values(g.clients||{}).filter(c=>c.tgId).length,bc=Object.values(g.broadcasts||{}).sort((a,b)=>b.ts-a.ts).slice(0,10);
- return`<h1 class="page">Aksiya va mijozlar</h1>${xImgSettings()}<div style="height:14px"></div>
+ return`<h1 class="page">Aksiya va mijozlar</h1>${xImgSettings()}<div style="height:14px"></div>${xAutoPanel()}
  <div class="panel"><div class="panel-h"><h2>\u{1F381} Aksiyalar</h2><span class="spacer"></span><button class="btn sm primary" data-x="pnew">+ Yangi aksiya</button></div>
  <div class="tbl-wrap"><table class="t"><thead><tr><th>Nomi</th><th>Shartlari</th><th>Holati</th><th></th></tr></thead><tbody>
  ${ps.map((p,i)=>`<tr><td><b>${V(p.name)}</b></td><td style="font-size:13px">${V(xPromoDesc(p))}</td><td>${xPromoActive(p)?'<span class="pill ok">Hozir ishlayapti</span>':p.on?'<span class="pill">Kutilmoqda</span>':'<span class="pill out">O\'chiq</span>'}</td><td class="r" style="white-space:nowrap"><button class="btn sm" data-ptog="${i}">${p.on?"O'chirish":"Yoqish"}</button> <button class="btn sm" data-pedit="${i}">Tahrirlash</button></td></tr>`).join("")||'<tr><td colspan="4" class="muted">Hali aksiya yo\'q. Masalan: \xAB2 ta shampun olsa, 3-si sovg\'a\xBB yoki \xABJuma kuni hamma kremlarga 10%\xBB.</td></tr>'}
