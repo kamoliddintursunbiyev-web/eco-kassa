@@ -106,7 +106,8 @@ async function dailyReport(title) {
   const cl = (await db.collection('clients').get()).docs.map(d => d.data()); const cdebt = cl.reduce((x, c) => x + Math.max(0, Number(c.debt) || 0), 0);
   const ord = (await db.collection('orders').where('ts', '>=', a).get()).docs.map(d => d.data());
   const rets = (await db.collection('returns').where('ts', '>=', a).get()).docs.map(d => d.data()).filter(r => r.ts < b);
-  const exps = (await db.collection('expenses').where('ts', '>=', a).get()).docs.map(d => d.data()).filter(x => x.ts < b && !x.void);
+  const exAll = (await db.collection('expenses').where('ts', '>=', a).get()).docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.ts < b && !x.void);
+  const exRev = new Set(exAll.filter(x => x.rev).map(x => x.rev)), exps = exAll.filter(x => !x.rev && !exRev.has(x.id));
   const rSum = sum(rets, 'amount'), eSum = sum(exps, 'amount');
   const st = await settings(); const lim = st.expDays == null ? 60 : Number(st.expDays) || 60;
   const expSoon = expiringList(prods, lim);
@@ -455,6 +456,15 @@ db.collection('purchases').where('ts', '>=', SINCE_EVENTS).onSnapshot(async snap
     if (ch.type !== 'added') continue; const x = ch.doc.data(); if (x.notified) continue;
     await ch.doc.ref.update({ notified: true }).catch(() => {});
     const n = (x.items || []).reduce((s, i) => s + (Number(i.qty) || 0), 0);
+    // Kassada tuzatish: "rev" — eski yozuvni bekor qiluvchi, "fix" — to'g'rilangan kirim.
+    if (x.rev) {
+      if (x.del) await notifyAdmins(`🗑 <b>Kirim bekor qilindi</b>\n${LINE}\n👤 ${esc(x.fixBy || '—')}\n🚚 ${esc(x.supplierName || '')}\n📦 ${(x.items || []).length} xil · ${Math.abs(n)} dona · <b>${money(Math.abs(Number(x.total) || 0))} so'm</b>${x.why ? `\n📝 Sababi: ${esc(x.why)}` : ''}`);
+      continue;
+    }
+    if (x.fix) {
+      await notifyAdmins(`✏️ <b>Kirim tuzatildi</b>\n${LINE}\n👤 Tuzatdi: <b>${esc(x.fixBy || '—')}</b> (qabul qilgan: ${esc(x.seller || '—')})\n🚚 ${esc(x.supplierName || '')}\n📦 ${(x.items || []).length} xil · ${n} dona · <b>${money(x.total)} so'm</b>${x.why ? `\n📝 Sababi: ${esc(x.why)}` : ''}\n${(x.items || []).slice(0, 8).map(i => `   • ${esc(i.name)} × ${i.qty}`).join('\n')}`);
+      continue;
+    }
     await notifyAdmins(`📥 <b>Omborga kirim</b>\n${LINE}\n👤 Qabul qildi: <b>${esc(x.seller || '—')}</b>\n🚚 ${esc(x.supplierName || '')}\n📦 ${(x.items || []).length} xil · ${n} dona · <b>${money(x.total)} so'm</b>${Number(x.debt) ? `\n📒 Qarzga: ${money(x.debt)} so'm` : ''}\n${(x.items || []).slice(0, 8).map(i => `   • ${esc(i.name)} × ${i.qty}`).join('\n')}`);
   }
 }, e => console.error('purchases listener', e.message));
