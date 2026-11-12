@@ -394,6 +394,35 @@ button,.btn,.tabs button,.bnav button{transition:background-color .15s,border-co
 .tbl-wrap{border-radius:12px}
 table.t tbody tr:hover td{background:var(--surface-2)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+
+/* ===== Linko uslubi: indigo urg'u, oq yon menyu, yumshoq kartalar (v26) ===== */
+:root:not([data-theme="dark"]){
+ --bg:#f4f5fa; --surface:#ffffff; --surface-2:#eef0f8; --line:#e4e7f1;
+ --fg:#171a2e; --muted:#6b708c;
+ --accent:#5a55f5; --accent-fg:#ffffff; --accent-soft:#e9e9ff;
+ --ok:#1f9d63; --amber:#c46a14; --amber-soft:#fdf0df; --danger:#d4382f; --danger-soft:#fde8e6;
+ --side-bg:#ffffff; --side-fg:#3a3e5a; --side-act:#e9e9ff; --r:12px;
+ --s1:#5a55f5; --s2:#f08a3c; --s3:#1f9d63; --s4:#e6a700; --grid:#eceef6
+}
+:root:not([data-theme="dark"]) .side{border-right:1px solid var(--line)}
+:root:not([data-theme="dark"]) .side .brand{color:var(--fg)}
+:root:not([data-theme="dark"]) .side .brand small{color:var(--muted)}
+:root:not([data-theme="dark"]) .side .drop,:root:not([data-theme="dark"]) .mtop .drop{background:var(--accent)}
+:root:not([data-theme="dark"]) .clock{color:var(--fg)}
+:root:not([data-theme="dark"]) .who{background:var(--surface-2);color:var(--fg)}
+:root:not([data-theme="dark"]) .who small{color:var(--muted)}
+:root:not([data-theme="dark"]) .box{background:var(--accent-soft);color:var(--muted)}
+:root:not([data-theme="dark"]) .box b{color:var(--accent)}
+:root:not([data-theme="dark"]) .keys{color:var(--muted)}
+:root:not([data-theme="dark"]) .tabs button{opacity:1;color:var(--side-fg)}
+:root:not([data-theme="dark"]) .tabs button:hover{background:var(--surface-2)}
+:root:not([data-theme="dark"]) .tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+:root:not([data-theme="dark"]) .side>.btn,:root:not([data-theme="dark"]) .side button[data-act="lock"]{background:var(--surface)!important;color:var(--fg)!important;border:1px solid var(--line)!important}
+:root:not([data-theme="dark"]) .mtop{background:var(--surface);color:var(--fg);border-bottom:1px solid var(--line)}
+:root:not([data-theme="dark"]) .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 4px 12px rgba(90,85,245,.28)}
+:root:not([data-theme="dark"]) .btn.primary:hover{filter:none;background:#4a45e6}
+:root:not([data-theme="dark"]) .btn{border-radius:10px}
+:root:not([data-theme="dark"]) .panel,:root:not([data-theme="dark"]) .modal{border-color:var(--line)}
 </style>
 <style id="themeVars"></style>
 </head><body>
