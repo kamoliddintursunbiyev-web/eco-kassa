@@ -6,6 +6,7 @@
 import admin from 'firebase-admin';
 import { createHash, createHmac, pbkdf2Sync, timingSafeEqual } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import { Mp3Encoder } from '@breezystack/lamejs';
 
 const TOKEN = ((process.env.BOT_TOKEN || '').match(/\d{6,}:[A-Za-z0-9_-]{30,}/) || [''])[0];
 const SA = (process.env.FIREBASE_SA || '').trim();
@@ -37,11 +38,11 @@ const sleep = ms => new Promise(x => setTimeout(x, ms));
 
 const B = {
   buys: '🧾 Xaridlarim', cb: '💰 Keshbekim', debt: '📒 Qarzim', contact: "☎️ Bog'lanish", promo: '🎁 Aksiyalar',
-  report: '📊 Bugun', week: '📅 Hafta', stock: '📦 Ombor', debtors: '👥 Qarzdorlar',
+  report: '📊 Bugun', week: '📅 Hafta', voice: '🔊 Ovozli hisobot', stock: '📦 Ombor', debtors: '👥 Qarzdorlar',
 };
 const OLD_REPORT = '📊 Bugungi hisobot';
 const mainKb = { keyboard: [[{ text: "🛍 Do'kon", web_app: { url: SHOP_URL } }], [{ text: B.buys }, { text: B.cb }], [{ text: B.debt }, { text: B.promo }], [{ text: B.contact }]], resize_keyboard: true, is_persistent: true };
-const adminKb = { keyboard: [[{ text: B.report }, { text: B.week }], [{ text: B.stock }, { text: B.debtors }], ...mainKb.keyboard], resize_keyboard: true, is_persistent: true };
+const adminKb = { keyboard: [[{ text: B.report }, { text: B.week }], [{ text: B.stock }, { text: B.debtors }], [{ text: B.voice }], ...mainKb.keyboard], resize_keyboard: true, is_persistent: true };
 const bdayKb = { remove_keyboard: true };
 const phoneKb = { keyboard: [[{ text: '📱 Telefon raqamni yuborish', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true };
 
@@ -241,6 +242,7 @@ async function onMessage(m) {
     if (text === B.debtors || text === '/qarzdorlar') return send(chat, await debtorsReport(), adminKb);
     if (text === '/oylik') { const t = new Date(Date.now() + 5 * 3600e3); return send(chat, await monthlyReport(t.getUTCFullYear(), t.getUTCMonth()), adminKb); }
     if (text === '/oylik_otgan') { const t = new Date(Date.now() + 5 * 3600e3); let y = t.getUTCFullYear(), m = t.getUTCMonth() - 1; if (m < 0) { m = 11; y--; } return send(chat, await monthlyReport(y, m), adminKb); }
+    if (text === '/ovoz' || text === B.voice) { await send(chat, '⏳ Ovozli hisobot tayyorlanmoqda…', adminKb); try { await sendVoiceReport([from.id]); } catch (e) { await send(chat, '⚠️ Ovoz tayyorlab bo\'lmadi: ' + esc(e.message), adminKb); } return; }
     if (text === '/zaxira') { await send(chat, '⏳ Zaxira tayyorlanmoqda…', adminKb); await sendBackup(new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10), true, [from.id]); return; }
     if (text === '/chiqish') { await removeAdmin(from.id); return send(chat, '👋 Rahbar rejimidan chiqdingiz. Hisobot va xabarlar endi kelmaydi.', mainKb); }
     if (text === '/rahbarlar') {
@@ -397,6 +399,7 @@ setInterval(async () => {
     if (st.exists && st.data().lastDaily === key) return;
     await db.doc('meta/botState').set({ lastDaily: key }, { merge: true });
     await notifyAdmins(await dailyReport(`Kunlik hisobot · ${dmy(key)}`));
+    if (alertCfg.voice !== false) await sendVoiceReport().catch(e => console.error('voice report', e.message));
   } catch (e) { console.error('daily', e.message); }
 }, 60e3);
 
@@ -582,6 +585,61 @@ db.collection('shifts').where('ts', '>=', SINCE_EVENTS).onSnapshot(async snap =>
   }
 }, e => console.error('shifts listener', e.message));
 
+// ---------- Shubhali harakatlar: rahbarga darhol xabar ----------
+// Sozlama: meta/settings.alerts = { on, discPct, discSum }. Rahbarning o'z harakatlari uchun xabar yuborilmaydi.
+// Har yozuv bir marta: belgi (alerted / notified) bilan, bot qayta ishga tushsa ham takrorlanmaydi.
+let alertCfg = { on: true, discPct: 10, discSum: 50000 }, ownerNames = new Set();
+db.doc('meta/settings').onSnapshot(d => {
+  const st = d.exists ? d.data() : {};
+  alertCfg = { on: true, discPct: 10, discSum: 50000, ...(st.alerts || {}) };
+  ownerNames = new Set((st.staff || []).filter(x => x.role === 'owner').map(x => String(x.name || '').trim()));
+}, e => console.error('alerts cfg', e.message));
+const byOwner = name => ownerNames.has(String(name || '').trim());
+const alertOn = () => alertCfg.on !== false;
+
+db.collection('sales').where('ts', '>=', SINCE_EVENTS).onSnapshot(async snap => {
+  for (const ch of snap.docChanges()) {
+    if (ch.type !== 'added') continue; const s = ch.doc.data();
+    if (s.alerted || !alertOn() || byOwner(s.seller)) continue;
+    const sub = Number(s.sub) || 0, promo = (s.promos || []).reduce((x, p) => x + (Number(p.amt) || 0), 0);
+    const manual = Math.max(0, (Number(s.discount) || 0) - promo), pct = sub ? Math.round(manual / sub * 100) : 0;
+    const bigDisc = manual > 0 && (pct >= (Number(alertCfg.discPct) || 10) || manual >= (Number(alertCfg.discSum) || 50000));
+    const cheap = (s.items || []).filter(i => Number(i.cost) > 0 && Number(i.price) < Number(i.cost));
+    if (!bigDisc && !cheap.length) continue;
+    await ch.doc.ref.update({ alerted: true }).catch(() => {});
+    const L = [`⚠️ <b>Diqqat: ${bigDisc ? 'katta chegirma' : 'tannarxdan arzon sotuv'}</b>`, LINE,
+      `👤 Sotuvchi: <b>${esc(s.seller || '—')}</b> · ${fmt(s.ts)}`, `🧾 Chek ${esc(s.no)} · <b>${money(s.total)} so'm</b>`];
+    if (bigDisc) L.push(`🏷 Qo'lda chegirma: <b>${money(manual)} so'm (${pct}%)</b>${promo ? ` · aksiya ${money(promo)}` : ''}`);
+    if (cheap.length) L.push(`📉 Tannarxdan past:`, ...cheap.slice(0, 6).map(i => `   • ${esc(i.name)}: ${money(i.price)} (tannarx ${money(i.cost)})`));
+    if (s.clientName) L.push(`🙋 Mijoz: ${esc(s.clientName)}`);
+    await notifyAdmins(L.join('\n'));
+  }
+}, e => console.error('sales alerts', e.message));
+
+db.collection('returns').where('ts', '>=', SINCE_EVENTS).onSnapshot(async snap => {
+  for (const ch of snap.docChanges()) {
+    if (ch.type !== 'added') continue; const r = ch.doc.data();
+    if (r.notified || !alertOn() || byOwner(r.seller)) continue;
+    await ch.doc.ref.update({ notified: true }).catch(() => {});
+    await notifyAdmins(`↩️ <b>Tovar qaytarildi</b>\n${LINE}\n👤 Qaytardi: <b>${esc(r.seller || '—')}</b> · ${fmt(r.ts)}\n🧾 Chek ${esc(r.saleNo || '')} · <b>${money(r.amount)} so'm</b>${Number(r.cash) ? `\n💵 Naqd qaytarildi: ${money(r.cash)}` : ''}${Number(r.debtOff) ? `\n📒 Qarzdan ayirildi: ${money(r.debtOff)}` : ''}${r.clientName ? `\n🙋 Mijoz: ${esc(r.clientName)}` : ''}\n${(r.items || []).slice(0, 8).map(i => `   • ${esc(i.name)} × ${i.qty}`).join('\n')}${r.why ? `\n📝 Sababi: ${esc(r.why)}` : ''}`);
+  }
+}, e => console.error('returns alerts', e.message));
+
+// Xarajat va to'lov tuzatilsa yoki o'chirilsa (kirim tuzatishi yuqorida alohida).
+for (const [col, label] of [['expenses', 'Xarajat'], ['payments', "To'lov"]]) {
+  db.collection(col).where('ts', '>=', SINCE_EVENTS - 60 * 864e5).onSnapshot(async snap => {
+    for (const ch of snap.docChanges()) {
+      if (ch.type !== 'added') continue; const x = ch.doc.data();
+      if (!x.rev || x.notified || !alertOn() || byOwner(x.fixBy) || Number(x.at) < SINCE_EVENTS) continue;
+      await ch.doc.ref.update({ notified: true }).catch(() => {});
+      let who = '';
+      if (col === 'payments' && x.refId) { const r = await db.doc(`${x.kind === 'client' ? 'clients' : 'suppliers'}/${x.refId}`).get().catch(() => null); who = r && r.exists ? r.data().name || '' : ''; }
+      const what = col === 'payments' ? `${x.kind === 'client' ? 'Mijozdan olingan' : 'Yetkazib beruvchiga berilgan'}: ${esc(who)}` : esc(x.cat || '');
+      await notifyAdmins(`${x.del ? '🗑' : '✏️'} <b>${label} ${x.del ? "o'chirildi" : 'tuzatildi'}</b>\n${LINE}\n👤 ${esc(x.fixBy || '—')} · ${fmt(x.at)}\n${what ? `📌 ${what}\n` : ''}💵 Eski summa: <b>${money(Math.abs(Number(x.amount) || 0))} so'm</b> (${fmt(x.ts)})${x.why ? `\n📝 Sababi: ${esc(x.why)}` : ''}`);
+    }
+  }, e => console.error(col + ' alerts', e.message));
+}
+
 // Tovar kam qolganda yoki tugaganda rahbarga xabar (bir necha tovar bo'lsa — bitta xabarda).
 const stockSeen = new Map(); let stockReady = false; const stockQueue = new Map();
 db.collection('products').onSnapshot(snap => {
@@ -647,6 +705,129 @@ setInterval(async () => {
   } catch (e) { console.error('auto msgs', e.message); }
 }, 60e3);
 
+
+// ---------- Qarz eslatmasi (kassadagi Sozlamalar → «Qarz eslatmasi») ----------
+// Har kuni 12:00 dan keyin bir marta. Botda ro'yxatdan o'tgan qarzdor mijozga har N kunda bir marta
+// muloyim eslatma yuboriladi. Oxirgi 3 kunda xarid qilganlarga yozilmaydi. Rahbarga qisqa natija keladi.
+setInterval(async () => {
+  try {
+    const t = new Date(Date.now() + 5 * 3600e3); if (t.getUTCHours() < 12) return;
+    const st = await settings(); const dr = st.debtRemind || {}; if (!dr.on) return;
+    const key = t.toISOString().slice(0, 10); const bs = await db.doc('meta/botState').get();
+    if (bs.exists && bs.data().lastDebtRemind === key) return;
+    await db.doc('meta/botState').set({ lastDebtRemind: key }, { merge: true });
+    const every = Math.max(3, Number(dr.days) || 7) * 864e5, min = Math.max(0, Number(dr.min) || 10000), now = Date.now();
+    const shop = st.shopName || 'Eco Aroma';
+    const list = (await db.collection('clients').get()).docs.map(d => ({ ref: d.ref, id: d.id, ...d.data() }))
+      .filter(c => c.tgId && !c.archived && Number(c.debt) >= min && now - (Number(c.debtRemTs) || 0) >= every && now - (Number(c.lastTs) || 0) >= 3 * 864e5);
+    let n = 0, total = 0;
+    for (const c of list) {
+      const r = await send(c.tgId, `📒 <b>${esc(c.name || 'Hurmatli mijoz')}, assalomu alaykum!</b>\n${LINE}\n${esc(shop)} do'konida qarzingiz: <b>${money(c.debt)} so'm</b>.\nImkoningiz bo'lganda do'konga kelib to'lab qo'yishingizni so'raymiz. Rahmat! 🌿${st.phone ? `\n\n☎️ Savol bo'lsa: ${esc(st.phone)}` : ''}\n\n<i>Qarz tarixini «${B.debt}» tugmasida ko'rasiz.</i>`, mainKb).catch(e => ({ ok: false, description: e.message }));
+      if (r && r.ok === false) { console.error('debt remind', c.id, r.description); continue; }
+      await c.ref.update({ debtRemTs: now }).catch(() => {}); n++; total += Number(c.debt) || 0; await sleep(60);
+    }
+    if (n) await notifyAdmins(`📒 <b>Qarz eslatmasi yuborildi</b>\n${LINE}\n<b>${n}</b> ta mijozga · jami qarz <b>${money(total)} so'm</b>`);
+  } catch (e) { console.error('debt remind', e.message); }
+}, 60e3);
+
+// ---------- Ovozli kunlik hisobot ----------
+// Matnli hisobotdan keyin qisqa ovozli xabar. Ovoz: Azure (AZURE_SPEECH_KEY + AZURE_SPEECH_REGION, Madina ovozi)
+// bo'lsa — o'sha, aks holda kassadagi AI kaliti (Google Gemini, «Tahlil» bo'limida kiritilgan) bilan Gemini TTS.
+const UZ_ONES = ['', 'bir', 'ikki', 'uch', "to'rt", 'besh', 'olti', 'yetti', 'sakkiz', "to'qqiz"];
+const UZ_TENS = ['', "o'n", 'yigirma', "o'ttiz", 'qirq', 'ellik', 'oltmish', 'yetmish', 'sakson', "to'qson"];
+function uzNum(n) {
+  n = Math.round(Math.abs(Number(n) || 0)); if (!n) return 'nol';
+  const w = [];
+  for (const [v, name] of [[1e9, 'milliard'], [1e6, 'million'], [1e3, 'ming']]) {
+    if (n >= v) { const q = Math.floor(n / v); w.push(...(q === 1 && v === 1e3 ? [name] : [uzNum(q), name])); n %= v; }
+  }
+  if (n >= 100) { if (Math.floor(n / 100) > 1) w.push(UZ_ONES[Math.floor(n / 100)]); w.push('yuz'); n %= 100; }
+  if (n >= 10) { w.push(UZ_TENS[Math.floor(n / 10)]); n %= 10; }
+  if (n) w.push(UZ_ONES[n]);
+  return w.join(' ');
+}
+// Summani quloqqa qulay qilib aytadi: 3 245 600 → "uch million ikki yuz qirq olti ming so'm".
+const uzSum = v => { v = Number(v) || 0; const r = Math.abs(v) >= 1e4 ? Math.round(v / 1e3) * 1e3 : Math.round(v); return (v < 0 ? 'minus ' : '') + uzNum(r) + " so'm"; };
+
+async function dailyVoiceText() {
+  const a = dayStart(0), b = a + 864e5, ya = dayStart(1);
+  const all = (await db.collection('sales').where('ts', '>=', ya).get()).docs.map(d => d.data());
+  const T = all.filter(s => s.ts >= a && s.ts < b), Y = all.filter(s => s.ts >= ya && s.ts < a);
+  const tot = sum(T, 'total'), ytot = sum(Y, 'total'), pct = ytot ? Math.round((tot - ytot) / ytot * 100) : null;
+  const byP = {}; T.forEach(s => (s.items || []).forEach(i => { byP[i.name] = (byP[i.name] || 0) + (Number(i.qty) || 0); }));
+  const top = Object.entries(byP).sort((x, y) => y[1] - x[1]).slice(0, 3).map(x => x[0]);
+  const prods = (await db.collection('products').get()).docs.map(d => d.data()).filter(p => !p.archived);
+  const low = prods.filter(p => Number(p.qty) <= (p.min == null ? 3 : Number(p.min) || 0)).length;
+  const cdebt = (await db.collection('clients').get()).docs.reduce((x, d) => x + Math.max(0, Number(d.data().debt) || 0), 0);
+  const rets = (await db.collection('returns').where('ts', '>=', a).get()).docs.map(d => d.data()).filter(r => r.ts < b);
+  const st = await settings();
+  const L = [`Assalomu alaykum. ${st.shopName || 'Eco Aroma'} do'konining bugungi hisoboti.`];
+  if (!T.length) L.push('Bugun savdo bo\'lmadi.');
+  else {
+    L.push(`Bugun ${uzNum(T.length)} ta chek bo'yicha ${uzSum(tot)} savdo bo'ldi.`);
+    if (pct !== null && Math.abs(pct) >= 1) L.push(`Bu kechagidan ${uzNum(Math.abs(pct))} foiz ${pct >= 0 ? "ko'p" : 'kam'}.`);
+    L.push(`Taxminiy foyda ${uzSum(tot - costOf(T))}.`);
+    const card = sum(T, 'card'), debt = sum(T, 'debt'), disc = sum(T, 'discount');
+    const cash = sum(T, 'cash'), pays = [cash ? `naqd ${uzSum(cash)}` : '', card ? `karta orqali ${uzSum(card)}` : ''].filter(Boolean);
+    if (pays.length) L.push(`To'lovlar: ${pays.join(', ')}.`);
+    if (debt) L.push(`Qarzga ${uzSum(debt)} berildi.`);
+    if (disc) L.push(`Chegirmalar jami ${uzSum(disc)}.`);
+    if (top.length) L.push(`Eng ko'p sotilgan: ${top.join(', ')}.`);
+  }
+  if (rets.length) L.push(`Qaytarishlar: ${uzNum(rets.length)} ta, ${uzSum(sum(rets, 'amount'))}.`);
+  if (low) L.push(`Omborda ${uzNum(low)} xil tovar tugayapti yoki tugagan.`);
+  if (cdebt) L.push(`Mijozlarning umumiy qarzi ${uzSum(cdebt)}.`);
+  L.push('Batafsil raqamlar yuqoridagi xabarda.');
+  return L.join(' ');
+}
+
+const pcmToMp3 = (pcm, rate) => {
+  const enc = new Mp3Encoder(1, rate, 48), s = new Int16Array(pcm.buffer, pcm.byteOffset, Math.floor(pcm.length / 2)), out = [];
+  for (let i = 0; i < s.length; i += 1152) { const b = enc.encodeBuffer(s.subarray(i, i + 1152)); if (b.length) out.push(Buffer.from(b)); }
+  const f = enc.flush(); if (f.length) out.push(Buffer.from(f));
+  return Buffer.concat(out);
+};
+async function tts(text) {
+  const AK = (process.env.AZURE_SPEECH_KEY || '').trim(), AR = (process.env.AZURE_SPEECH_REGION || '').trim();
+  if (AK && AR) {
+    const ssml = `<speak version="1.0" xml:lang="uz-UZ"><voice name="${process.env.AZURE_VOICE || 'uz-UZ-MadinaNeural'}">${esc(text)}</voice></speak>`;
+    const r = await fetch(`https://${AR}.tts.speech.microsoft.com/cognitiveservices/v1`, { method: 'POST', body: ssml,
+      headers: { 'Ocp-Apim-Subscription-Key': AK, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'ogg-24khz-16bit-mono-opus', 'User-Agent': 'eco-kassa-bot' } });
+    if (!r.ok) throw new Error('azure ' + r.status);
+    return { buf: Buffer.from(await r.arrayBuffer()), name: 'hisobot.ogg' };
+  }
+  let key = (process.env.GEMINI_API_KEY || '').trim();
+  if (!key) { const d = await db.doc('private/ai').get(); key = d.exists ? String(d.data().aiKey || '').trim() : ''; }
+  if (!key) throw new Error('ovoz uchun kalit yo\'q (kassada AI kaliti yoki AZURE_SPEECH_KEY kerak)');
+  const models = [...new Set([(process.env.TTS_MODEL || '').trim(), 'gemini-3.8-flash-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'].filter(Boolean))];
+  let last = '';
+  for (const m of models) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ parts: [{ text: "O'zbek tilida, sof o'zbekcha talaffuz bilan, iliq va xotirjam ovozda, o'rtacha tezlikda o'qi:\n\n" + text }] }],
+        generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: process.env.TTS_VOICE || 'Sulafat' } } } } }) });
+    const j = await r.json().catch(() => ({}));
+    const part = (((j.candidates || [])[0] || {}).content || {}).parts?.find(p => p.inlineData && p.inlineData.data);
+    if (r.ok && part) {
+      const rate = Number((String(part.inlineData.mimeType || '').match(/rate=(\d+)/) || [])[1]) || 24000;
+      return { buf: pcmToMp3(Buffer.from(part.inlineData.data, 'base64'), rate), name: 'hisobot.mp3' };
+    }
+    last = `${m}: ${r.status} ${(j.error && j.error.message) || ''}`.slice(0, 200);
+    if (r.status === 401 || r.status === 403) break;
+  }
+  throw new Error('gemini tts — ' + last);
+}
+async function sendVoiceReport(to) {
+  const { buf, name } = await tts(await dailyVoiceText());
+  for (const id of (to || await admins())) {
+    const fd = new FormData(); fd.append('chat_id', String(id)); fd.append('caption', '🔊 Kunlik hisobot (ovozli)');
+    fd.append('voice', new Blob([buf]), name);
+    const r = await fetch(API + 'sendVoice', { method: 'POST', body: fd }).then(x => x.json()).catch(e => ({ ok: false, description: e.message }));
+    if (!r.ok) console.error('sendVoice', r.description);
+    await sleep(60);
+  }
+}
+
 // ---------- Oylik foyda-zarar hisoboti: har oyning 1-sanasida 09:30 dan keyin, o'tgan oy uchun ----------
 const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
 async function monthlyReport(y, m) {
@@ -691,7 +872,7 @@ async function setupMenus() {
   await tg('setChatMenuButton', { menu_button: { type: 'web_app', text: "🛍 Do'kon", web_app: { url: SHOP_URL } } });
   for (const id of await admins()) {
     await tg('setMyCommands', { scope: { type: 'chat', chat_id: id }, commands: [
-      { command: 'hisobot', description: 'Bugungi hisobot' }, { command: 'hafta', description: 'Haftalik hisobot' },
+      { command: 'hisobot', description: 'Bugungi hisobot' }, { command: 'ovoz', description: 'Ovozli hisobot' }, { command: 'hafta', description: 'Haftalik hisobot' },
       { command: 'ombor', description: 'Ombor holati' }, { command: 'qarzdorlar', description: 'Qarzlar' },
       { command: 'zaxira', description: "To'liq zaxira fayli" }, { command: 'rahbarlar', description: 'Ulangan rahbarlar' },
       { command: 'chiqish', description: 'Rahbar rejimidan chiqish' }, { command: 'start', description: 'Bosh menyu' }] });

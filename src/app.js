@@ -1723,6 +1723,76 @@ function render(n) {
     (lastTab = state.tab),
     renderOrderBadges());
 }
+/* ===== Chekni kechiktirish =====
+   Mijoz tanlab turganda savat kutishga qo'yiladi, sotuvchi keyingi mijozga sotaveradi.
+   Kechiktirilgan savatlar shu qurilmada saqlanadi (sahifa yangilansa ham yo'qolmaydi). */
+var HELD_MAX = 10;
+function heldList() {
+  let l = store.get("eco.held", []);
+  return Array.isArray(l) ? l : [];
+}
+function heldBarHtml() {
+  let l = heldList();
+  if (!l.length) return "";
+  return `<div class="held" style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line,#e5e5e5)">${l
+    .map((h) => {
+      let c = h.cartClient && state.clients[h.cartClient],
+        tot = (h.cart || []).reduce((x, it) => x + num(it.qty) * num(it.price), 0);
+      return `<span style="display:inline-flex;align-items:center;gap:2px"><button class="btn sm" data-act="unhold" data-hid="${esc(h.id)}" title="Savatni qaytarish">▶ ${money(tot)}${c ? " · " + esc(c.name) : ""} · ${fmtDateTime(h.ts).slice(-5)}</button><button class="btn sm" data-act="delhold" data-hid="${esc(h.id)}" aria-label="Kechiktirilgan savatni o'chirish" title="O'chirish">×</button></span>`;
+    })
+    .join("")}</div>`;
+}
+function cartReset() {
+  state.pendingOrder = null;
+  state.cart = [];
+  state.cartClient = null;
+  state.pay = { cash: "", card: "", cb: "" };
+  state.discount = { type: "pct", val: 0 };
+}
+function holdCart(quiet) {
+  if (!state.cart.length) return;
+  let l = heldList();
+  if (l.length >= HELD_MAX) {
+    toast(`Ko'pi bilan ${HELD_MAX} ta savat kechiktiriladi — avval birini yakunlang`);
+    return !1;
+  }
+  l.push({
+    id: newId(),
+    ts: Date.now(),
+    seller: state.seller || "",
+    cart: JSON.parse(JSON.stringify(state.cart)),
+    cartClient: state.cartClient || null,
+    discount: { ...state.discount },
+    pendingOrder: state.pendingOrder || null,
+  });
+  store.set("eco.held", l);
+  cartReset();
+  quiet || toast("Savat kechiktirildi — keyingi mijozga sotishingiz mumkin");
+  render(!0);
+  return !0;
+}
+function unholdCart(id) {
+  let l = heldList(),
+    h = l.find((x) => x.id === id);
+  if (!h) return;
+  if (state.cart.length && !holdCart(!0)) return;
+  l = heldList().filter((x) => x.id !== id);
+  store.set("eco.held", l);
+  cartReset();
+  state.cart = h.cart || [];
+  state.cartClient = h.cartClient && state.clients[h.cartClient] ? h.cartClient : null;
+  state.discount = h.discount || { type: "pct", val: 0 };
+  state.pendingOrder = h.pendingOrder || null;
+  toast("Savat qaytarildi");
+  render(!0);
+}
+function dropHeld(id) {
+  store.set(
+    "eco.held",
+    heldList().filter((x) => x.id !== id),
+  );
+  render();
+}
 function pageSale() {
   let n = state.q.trim().toLowerCase(),
     e = activeProducts();
@@ -1761,7 +1831,8 @@ function pageSale() {
      ${state.loaded ? (e.length ? `<div class="grid">${r}</div>` : `<div class="empty">${n ? "Hech narsa topilmadi." : "Hali tovar yo'q. \xABTovarlar va qoldiq\xBB bo'limida qo'shing."}</div>`) : '<div class="empty">Tovarlar yuklanmoqda\u2026</div>'}
    </section>
    <aside class="panel cart" aria-label="Savat">
-     <div class="panel-h"><h2>Savat</h2><span class="pill num">${money(t.count)} dona</span><span class="spacer"></span><button class="btn sm" data-x="retfind">\u21A9 Qaytarish</button>${state.cart.length ? '<button class="btn sm" data-act="clear">Tozalash</button>' : ""}</div>
+     <div class="panel-h"><h2>Savat</h2><span class="pill num">${money(t.count)} dona</span><span class="spacer"></span><button class="btn sm" data-x="retfind">\u21A9 Qaytarish</button>${state.cart.length ? '<button class="btn sm" data-act="hold" title="Savatni kutishga qo\'yib, keyingi mijozga sotish">⏸ Kechiktirish</button><button class="btn sm" data-act="clear">Tozalash</button>' : ""}</div>
+     ${heldBarHtml()}
      <div class="client-box">
        ${
          i
@@ -5028,6 +5099,14 @@ document.addEventListener(
     if (!t) return;
     if (t.dataset && t.dataset.iexp != null && intake && intake.lines[+t.dataset.iexp]) {
       intake.lines[+t.dataset.iexp].exp = t.value;
+      return;
+    }
+    if (["drOn", "drDays", "drMin"].includes(t.id) && isOwner()) {
+      debtRemindSave();
+      return;
+    }
+    if (["alOn", "alPct", "alSum", "alVoice"].includes(t.id) && isOwner()) {
+      alertsSave();
       return;
     }
     if (t.id === "expDays" && isOwner()) {
@@ -8380,6 +8459,59 @@ document.addEventListener(
 );
 
 /* ===== /Rasm va AI ===== */
+/* ===== Telegram ogohlantirishlar (rahbar uchun) =====
+   Bot shubhali harakatlar haqida rahbarga darhol yozadi: katta chegirma, tannarxdan arzon sotuv,
+   qaytarish, xarajat/to'lov tuzatilishi, kassada pul kam chiqishi. Rahbarning o'z harakatlari hisobga olinmaydi. */
+function alertsCfg() {
+  return Object.assign({ on: !0, discPct: 10, discSum: 50000, voice: !0 }, (state.settings || {}).alerts || {});
+}
+function debtRemindCfg() {
+  return Object.assign({ on: !1, days: 7, min: 10000 }, (state.settings || {}).debtRemind || {});
+}
+function debtRemindSave() {
+  let v = (id) => qsel("#" + id),
+    d = {
+      on: !!(v("drOn") && v("drOn").checked),
+      days: Math.max(3, num(v("drDays") && v("drDays").value) || 7),
+      min: Math.max(0, num(v("drMin") && v("drMin").value)),
+    };
+  dbUpdate("meta", "settings", { debtRemind: d });
+  state.settings.debtRemind = d;
+  toast(d.on ? "Saqlandi — qarz eslatmasi yoqildi" : "Saqlandi");
+}
+function alertsPanelHtml() {
+  let a = alertsCfg(),
+    d = debtRemindCfg();
+  return `<div class="panel" style="max-width:640px;margin-top:14px"><div class="panel-h"><h2>🔔 Telegram ogohlantirishlar</h2></div><div class="panel-b" style="display:grid;gap:12px">
+   <div class="note">Botda /rahbar bilan ulangan telefonlarga darhol xabar keladi: katta chegirma, tannarxdan arzon sotuv, tovar qaytarish, xarajat yoki to'lov tuzatilishi, kassada pul kam chiqishi. Sizning o'z harakatlaringiz uchun xabar kelmaydi.</div>
+   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="alOn" ${a.on !== !1 ? "checked" : ""}> Ogohlantirishlar yoqilgan</label>
+   <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <label class="l" for="alPct">Chegirma shu foizdan oshsa (%)<input id="alPct" class="f num" value="${num(a.discPct)}" inputmode="numeric"></label>
+    <label class="l" for="alSum">yoki shu summadan oshsa (so'm)<input id="alSum" class="f num" value="${num(a.discSum)}" inputmode="numeric"></label>
+   </div>
+   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="alVoice" ${a.voice !== !1 ? "checked" : ""}> Kunlik hisobotni ovozli xabar qilib ham yuborish (21:30)</label>
+  </div></div>
+  <div class="panel" style="max-width:640px;margin-top:14px"><div class="panel-h"><h2>📒 Qarz eslatmasi</h2></div><div class="panel-b" style="display:grid;gap:12px">
+   <div class="note">Botda ro'yxatdan o'tgan qarzdor mijozlarga bot o'zi muloyim eslatma yozadi (kuniga bir marta, 12:00 dan keyin). Oxirgi 3 kunda xarid qilganlarga yozilmaydi. Kimga yuborilgani sizga xabar qilinadi.</div>
+   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="drOn" ${d.on ? "checked" : ""}> Qarz eslatmasi yoqilgan</label>
+   <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <label class="l" for="drDays">Har necha kunda bir marta<select id="drDays" class="f">${[3, 5, 7, 10, 14, 30].map((x) => `<option value="${x}" ${num(d.days) === x ? "selected" : ""}>${x} kun</option>`).join("")}</select></label>
+    <label class="l" for="drMin">Qarz shundan kam bo'lsa yozilmasin (so'm)<input id="drMin" class="f num" value="${num(d.min)}" inputmode="numeric"></label>
+   </div>
+  </div></div>`;
+}
+function alertsSave() {
+  let v = (id) => qsel("#" + id),
+    a = {
+      on: !!(v("alOn") && v("alOn").checked),
+      discPct: Math.max(1, Math.min(100, num(v("alPct") && v("alPct").value) || 10)),
+      discSum: Math.max(0, num(v("alSum") && v("alSum").value)),
+      voice: !!(v("alVoice") && v("alVoice").checked),
+    };
+  dbUpdate("meta", "settings", { alerts: a });
+  state.settings.alerts = a;
+  toast("Saqlandi");
+}
 function pageSettings() {
   let n = state.settings;
   return `<h1 class="page">Sozlamalar</h1>
@@ -8400,6 +8532,7 @@ function pageSettings() {
    <div class="tbl-wrap"><table class="t"><thead><tr><th>Ism</th><th>Login</th><th>Roli</th><th></th></tr></thead><tbody>
    ${(n.staff || []).map((e, t) => `<tr><td><b>${esc(e.name)}</b>${e.off ? ' <span class="pill">yopilgan</span>' : ""}</td><td class="num">${esc(e.login || "\u2014")}</td><td>${e.role === "owner" ? "Rahbar" : "Sotuvchi"}</td><td class="r"><button class="btn sm" data-editstaff="${t}">Tahrirlash</button>${e.main ? "" : ` <button class="btn sm ${e.off ? "" : "danger"}" data-staffoff="${t}">${e.off ? "Ochish" : "Yopish"}</button>`}</td></tr>`).join("")}
    </tbody></table></div><div class="panel-b note" style="margin:0 14px 14px">Profilni faqat rahbar yaratadi va parolini o'zgartiradi. Har bir chekda kim sotgani yoziladi.</div></div>
+  ${isOwner() ? alertsPanelHtml() : ""}
   <div class="panel" style="max-width:640px;margin-top:14px"><div class="panel-h"><h2>Zaxira nusxa (backup)</h2></div><div class="panel-b" style="display:grid;gap:12px">
    <div class="note">Hamma ma'lumot Google serverida (Firebase) saqlanadi va istalgan qurilmadan ko'rinadi. Ma'lumotni o'chirish taqiqlangan \u2014 tovar faqat arxivga olinadi. Qo'shimcha xavfsizlik uchun haftada bir marta zaxira faylini olib qo'ying.
    ${(() => {
@@ -9229,6 +9362,9 @@ document.addEventListener("click", async (n) => {
     return;
   }
   let i = t.act;
+  if (i === "hold") return void holdCart();
+  if (i === "unhold") return void unholdCart(t.hid);
+  if (i === "delhold") return void dropHeld(t.hid);
   if (i === "clear")
     ((state.pendingOrder = null),
       (state.cart = []),

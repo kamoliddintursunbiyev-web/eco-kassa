@@ -35,3 +35,12 @@ Keyin `index.html` bilan birga commit qiling. Telefonlar yangi versiyani olishi 
 - Bot har kecha 22:00 da rahbarlarga zaxira fayl yuboradi (yakshanba — to'liq, boshqa kunlar — yengil), `/zaxira` — darhol to'liq.
 - Kassa: Sozlamalar → «Zaxira faylini yuklab olish» / «Zaxiradan tiklash» / «Zaxira faylini tekshirish».
 - Tiklash faqat bazada **yo'q** yozuvlarni qaytaradi, mavjudlariga tegmaydi va natija hisobotini ko'rsatadi.
+
+## Telegram bot (rahbar uchun)
+
+- **Ogohlantirishlar** (Sozlamalar → «Telegram ogohlantirishlar»): katta chegirma, tannarxdan arzon sotuv, qaytarish,
+  xarajat/to'lov tuzatilishi, kassada pul kam chiqishi. Rahbarning o'z harakatlari uchun xabar kelmaydi.
+- **Ovozli kunlik hisobot** (21:30, yoki `/ovoz`, «🔊 Ovozli hisobot» tugmasi). Ovoz uchun kalit:
+  kassadagi AI kaliti (Google Gemini, «Tahlil» bo'limida) avtomatik ishlatiladi; yoki Railway'da
+  `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` (Madina ovozi), ixtiyoriy `TTS_VOICE`, `TTS_MODEL`, `GEMINI_API_KEY`.
+- **Qarz eslatmasi** (Sozlamalar → «Qarz eslatmasi», odatda o'chiq): botdagi qarzdor mijozlarga har N kunda eslatma.

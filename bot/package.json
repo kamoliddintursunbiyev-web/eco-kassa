@@ -4,7 +4,14 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "engines": { "node": ">=18" },
-  "scripts": { "start": "node index.js" },
-  "dependencies": { "firebase-admin": "12.5.0" }
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "firebase-admin": "12.5.0",
+    "@breezystack/lamejs": "1.2.7"
+  }
 }
