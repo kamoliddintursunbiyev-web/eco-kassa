@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eco Aroma Kassa</title>
+<meta name="description" content="Eco Aroma do'koni: kassa, ombor, mijozlar, qarzlar, keshbek va rahbar paneli">
+<meta property="og:title" content="Eco Aroma Kassa"><meta property="og:description" content="Do'kon boshqaruvi: kassa, ombor, mijozlar va hisobotlar">
+<meta property="og:image" content="https://kamoliddintursunbiyev-web.github.io/eco-kassa/og.png"><meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#22392f"><link rel="preload" href="fonts/golos-text-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>/*@STYLES*/</style>
+<style id="themeVars"></style>
+</head><body>
+
+<div class="app">
+<aside class="side">
+  <div class="brand"><span class="drop brandmark" aria-hidden="true"></span><span id="shopName">Eco Aroma</span> <small>kassa</small></div>
+  <div class="clock" id="clock">--:--</div>
+  <div class="who"><span id="whoName">—</span><small id="whoRole"></small></div>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="bosh" data-owner><span class="ti" data-ico="home"></span>Bosh sahifa</button>
+    <button role="tab" data-tab="sotuv" aria-selected="true"><span class="ti" data-ico="cart"></span>Sotuv</button>
+    <button role="tab" data-tab="tovarlar"><span class="ti" data-ico="box"></span>Tovarlar va qoldiq</button>
+    <button role="tab" data-tab="inventar"><span class="ti" data-ico="inv"></span>Inventarizatsiya</button>
+    <button role="tab" data-tab="buyurtma"><span class="ti" data-ico="inbox"></span>Telegram buyurtmalar <span class="badge" id="ordBadge" hidden>0</span></button>
+    <button role="tab" data-tab="mijozlar"><span class="ti" data-ico="users"></span>Mijozlar</button>
+    <button role="tab" data-tab="taminot" data-owner><span class="ti" data-ico="truck"></span>Yetkazib beruvchilar</button>
+    <button role="tab" data-tab="hisobot"><span class="ti" data-ico="chart"></span>Hisobot</button>
+    <button role="tab" data-tab="kassa"><span class="ti" data-ico="cash"></span>Kassa va xarajatlar</button>
+    <button role="tab" data-tab="marketing" data-owner><span class="ti" data-ico="gift"></span>Aksiya va mijozlar</button>
+    <button role="tab" data-tab="tahlil" data-owner><span class="ti" data-ico="trend"></span>Tahlil</button>
+    <button role="tab" data-tab="sozlama" data-owner><span class="ti" data-ico="gear"></span>Sozlamalar va zaxira</button>
+  </nav>
+  <div class="box">Bugungi savdo<b class="num" id="todaySum">0</b><span id="todayCnt">0 ta chek</span></div>
+  <span class="spacer"></span>
+  <div class="keys"><kbd>F2</kbd> qidiruv · <kbd>F4</kbd> naqd · <kbd>F8</kbd> karta<br><kbd>F9</kbd> sotish · <kbd>Esc</kbd> yopish</div>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="conn" id="conn">Yuklanmoqda…</span><span id="srvBadge" style="font-size:12px;opacity:.85"></span></div>
+  <button class="btn" data-act="lock" style="background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.15)">Qulflash (chiqish)</button>
+</aside>
+<header class="mtop"><span class="drop brandmark" aria-hidden="true"></span><b id="mShop">Eco Aroma</b><span class="spacer"></span><span class="mdot" id="mConn" title="Aloqa"></span><span id="mWho" class="muted" style="font-size:13px"></span><button class="btn sm" data-act="lock" aria-label="Qulflash">🔒</button></header>
+<main class="wrap" id="main"></main>
+<nav class="bnav" id="bnav">
+  <button data-tab="bosh" data-owner><i data-ico="home" data-emo="🏠">🏠</i>Bosh</button>
+  <button data-tab="sotuv"><i data-ico="cart" data-emo="🛒">🛒</i>Sotuv</button>
+  <button data-tab="tovarlar"><i data-ico="box" data-emo="📦">📦</i>Tovarlar</button>
+  <button data-tab="buyurtma"><i data-ico="inbox" data-emo="📨">📨</i>Buyurtma<span class="badge" id="ordBadge2" hidden>0</span></button>
+  <button data-more><i data-ico="menu" data-emo="☰">☰</i>Ko'proq</button>
+</nav>
+</div>
+<div id="modalRoot"></div>
+<div id="camRoot"></div>
+
+<script>window.ECO_FIREBASE_CONFIG={"apiKey":"AIzaSyDJdBD3zv0ic3WNetcxgZHoJB5eBjxw_cU","authDomain":"ecoaroma-kassa.firebaseapp.com","projectId":"ecoaroma-kassa","storageBucket":"ecoaroma-kassa.firebasestorage.app","messagingSenderId":"1059896821425","appId":"1:1059896821425:web:2c7ad393d5a907baff8490"};</script>
+<script>try{var t=JSON.parse(localStorage.getItem('eco.theme')||'null');if(t&&t.css){document.getElementById('themeVars').textContent=t.css;if(t.mode&&t.mode!=='auto')document.documentElement.setAttribute('data-theme',t.mode);if(t.line)document.documentElement.classList.add('icons-line');}}catch(e){}</script>
+<script>/*@BUNDLE*/</script>
+<script>if(location.protocol.startsWith("http")&&"serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").then(function(reg){
+  function ask(){ if(document.getElementById("updBar")) return; var d=document.createElement("div"); d.id="updBar"; d.className="upd"; d.innerHTML='Yangi versiya tayyor <button class="btn sm">Yangilash</button>'; d.querySelector("button").onclick=function(){ location.reload(); }; document.body.appendChild(d); }
+  reg.addEventListener("updatefound",function(){ var w=reg.installing; if(!w) return; w.addEventListener("statechange",function(){ if(w.state==="installed"&&navigator.serviceWorker.controller) ask(); }); });
+  setInterval(function(){ reg.update().catch(function(){}); }, 30*60*1000);
+}).catch(function(){});}</script>
+</body></html>

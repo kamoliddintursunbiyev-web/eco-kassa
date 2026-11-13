@@ -514,8 +514,8 @@ setInterval(async () => {
 // Har kecha 22:00 da: yakshanba kuni (yoki 7 kundan beri to'liq bo'lmasa) — to'liq zaxira,
 // boshqa kunlari — yengil zaxira (tovarlar, mijozlar, sozlamalar to'liq + oxirgi 8 kunlik savdo va harakatlar).
 // Bu Firebase bepul limitini (kuniga 50 000 o'qish) tejaydi. Ikkalasi ham «Zaxiradan tiklash» bilan tiklanadi.
-const FULL_COLS = ['products', 'clients', 'suppliers', 'meta', 'inventory', 'certs', 'broadcasts'];
-const TS_COLS = ['sales', 'payments', 'purchases', 'returns', 'expenses', 'shifts', 'stockLog', 'certUses'];
+const FULL_COLS = ['products', 'clients', 'suppliers', 'meta', 'inventory', 'certs', 'broadcasts', 'catalog', 'tgUsers'];
+const TS_COLS = ['sales', 'payments', 'purchases', 'returns', 'expenses', 'shifts', 'stockLog', 'certUses', 'orders'];
 async function sendBackup(key, full, to) {
   const docs = []; const since = Date.now() - 8 * 864e5;
   for (const c of FULL_COLS) (await db.collection(c).get()).docs.forEach(d => { if (!(c === 'meta' && (d.id === 'botState' || d.id === 'botAdmins'))) docs.push([c + '/' + d.id, d.data()]); });
